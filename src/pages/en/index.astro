@@ -1,0 +1,22 @@
+---
+import DashboardPanel from '../../components/DashboardPanel';
+import MainLayout from '../../layouts/MainLayout.astro';
+import { t } from '../../i18n';
+import { localeFromPath, localizePath } from '../../i18n/routing';
+const locale = localeFromPath(Astro.url.pathname);
+---
+<MainLayout title={t(locale, 'nav.overview')} locale={locale}>
+  <div class="space-y-6">
+    <DashboardPanel client:load locale={locale} />
+    <div class="grid gap-4 sm:grid-cols-2">
+      <a href={localizePath(locale, '/accounts')} class="card border border-base-300 bg-base-100 p-6 transition-colors hover:border-primary">
+        <h2 class="font-semibold">{t(locale, 'home.accountsCard')}</h2>
+        <p class="text-sm opacity-70">{t(locale, 'home.accountsCardDesc')}</p>
+      </a>
+      <a href={localizePath(locale, '/zones')} class="card border border-base-300 bg-base-100 p-6 transition-colors hover:border-primary">
+        <h2 class="font-semibold">{t(locale, 'home.zonesCard')}</h2>
+        <p class="text-sm opacity-70">{t(locale, 'home.zonesCardDesc')}</p>
+      </a>
+    </div>
+  </div>
+</MainLayout>

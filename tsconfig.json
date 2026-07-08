@@ -1,0 +1,10 @@
+{
+  "extends": "astro/tsconfigs/strict",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "types": ["@cloudflare/workers-types", "vite/client"],
+    "baseUrl": "."
+  },
+  "include": ["src/**/*", "tests/**/*"],
+  "exclude": ["dist", "node_modules"]
+}

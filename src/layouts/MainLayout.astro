@@ -1,0 +1,166 @@
+---
+import '../styles/global.css';
+import { BarChart3, Check, ChevronDown, Database, Globe, Languages, LayoutDashboard, LogOut, Menu, PanelLeft, UserRound, Users, Workflow } from 'lucide-react';
+import { LOCALES, t, type Locale } from '../i18n';
+import { localizePath } from '../i18n/routing';
+import { shouldBypassAuth } from '../server/auth';
+import ThemeToggle from '../components/ThemeToggle';
+interface Props { title: string; locale: Locale }
+const { title, locale } = Astro.props;
+const current = Astro.url.pathname;
+const home = localizePath(locale, '/');
+const nav = [
+  { href: home, label: t(locale, 'nav.overview'), Icon: LayoutDashboard },
+  { href: localizePath(locale, '/accounts'), label: t(locale, 'nav.accounts'), Icon: Users },
+  { href: localizePath(locale, '/zones'), label: t(locale, 'nav.zones'), Icon: Globe },
+  { href: localizePath(locale, '/workers'), label: t(locale, 'nav.workersPages'), Icon: Workflow },
+  { href: localizePath(locale, '/usage'), label: t(locale, 'nav.usage'), Icon: BarChart3 },
+];
+const upcoming = [
+  { label: t(locale, 'nav.storage'), Icon: Database },
+];
+const LOCALE_LABELS: Record<Locale, string> = { zh: '中文', en: 'English' };
+const userEmail = Astro.locals.userEmail;
+// Cloudflare Access 的登出走边缘端点 /cdn-cgi/access/logout（清除 CF_Authorization cookie）。
+// DEV_MODE 旁路时没有真实会话，登出无意义 —— 菜单里改为禁用提示。
+const devBypass = shouldBypassAuth(Astro.locals.runtime.env);
+const logoutHref = '/cdn-cgi/access/logout';
+const sidebarHidden = Astro.cookies.get('sidebar')?.value === 'hidden';
+function isActive(href: string): boolean {
+  return href === home ? current === home : current.startsWith(href);
+}
+---
+<html lang={locale === 'zh' ? 'zh-CN' : 'en'}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>{title} · cloudflareOps</title>
+    <script is:inline>
+      (function () {
+        var saved = localStorage.getItem('theme');
+        var theme = saved === 'flare' || saved === 'flare-light'
+          ? saved
+          : (window.matchMedia('(prefers-color-scheme: light)').matches ? 'flare-light' : 'flare');
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+  </head>
+  <body class="min-h-screen bg-base-200 text-sm text-base-content">
+    <div id="app-drawer" class:list={['drawer', !sidebarHidden && 'lg:drawer-open']}>
+      <input id="nav-drawer" type="checkbox" class="drawer-toggle" />
+      <div class="drawer-content flex min-h-screen flex-col">
+        <header class="flex items-center gap-3 border-b border-base-300 bg-base-100 px-6 py-3">
+          <label for="nav-drawer" class="btn btn-ghost btn-sm lg:hidden" aria-label={t(locale, 'layout.openNav')}>
+            <Menu size={18} strokeWidth={1.75} />
+          </label>
+          <button
+            id="sidebar-toggle"
+            type="button"
+            class="btn btn-ghost btn-sm hidden lg:inline-flex"
+            aria-label={t(locale, 'layout.toggleSidebar')}
+          >
+            <PanelLeft size={18} strokeWidth={1.75} />
+          </button>
+          <h1 class="min-w-0 flex-1 truncate text-lg font-semibold">{title}</h1>
+          <div class="flex shrink-0 items-center gap-2">
+            <div class="dropdown dropdown-end">
+              <div tabindex="0" role="button" class="btn btn-ghost btn-sm gap-1.5" aria-label={t(locale, 'layout.language')}>
+                <Languages size={16} strokeWidth={1.75} />
+                <span class="text-xs font-normal">{LOCALE_LABELS[locale]}</span>
+                <ChevronDown size={14} strokeWidth={1.75} className="opacity-60" />
+              </div>
+              <ul tabindex="0" class="dropdown-content menu z-[1000] mt-1 w-36 rounded-box border border-base-300 bg-base-100 p-1 shadow-lg">
+                {LOCALES.map((l) => (
+                  <li>
+                    <a href={localizePath(l, current)} class:list={[l === locale && 'menu-active']}>
+                      <span class="text-xs">{LOCALE_LABELS[l]}</span>
+                      {l === locale && <Check size={14} strokeWidth={1.75} className="ml-auto" />}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <ThemeToggle client:load ariaLabel={t(locale, 'theme.toggle')} />
+            <div class="dropdown dropdown-end">
+              <div tabindex="0" role="button" class="btn btn-ghost btn-sm gap-1.5" aria-label={t(locale, 'layout.account')}>
+                <UserRound size={16} strokeWidth={1.75} />
+                <span class="hidden max-w-[10rem] truncate font-mono text-xs font-normal opacity-60 md:inline">{userEmail}</span>
+                <ChevronDown size={14} strokeWidth={1.75} className="opacity-60" />
+              </div>
+              <ul tabindex="0" class="dropdown-content menu z-[1000] mt-1 w-56 rounded-box border border-base-300 bg-base-100 p-1 shadow-lg">
+                <li class="menu-title px-3 py-2">
+                  <span class="block truncate font-mono text-xs opacity-60" title={userEmail}>{userEmail}</span>
+                </li>
+                {devBypass ? (
+                  <li>
+                    <span class="cursor-not-allowed whitespace-nowrap text-xs opacity-50">
+                      <LogOut size={14} strokeWidth={1.75} />
+                      {t(locale, 'layout.logoutDevBypass')}
+                    </span>
+                  </li>
+                ) : (
+                  <li>
+                    <a href={logoutHref} class="whitespace-nowrap text-xs text-error">
+                      <LogOut size={14} strokeWidth={1.75} />
+                      {t(locale, 'layout.logout')}
+                    </a>
+                  </li>
+                )}
+              </ul>
+            </div>
+          </div>
+          <div><slot name="action" /></div>
+        </header>
+        <main class="w-full flex-1 p-6 lg:px-8">
+          <slot />
+        </main>
+      </div>
+      <div class="drawer-side">
+        <label for="nav-drawer" class="drawer-overlay" aria-label={t(locale, 'layout.closeNav')}></label>
+        <aside class="flex min-h-full w-[232px] flex-col border-r border-base-300 bg-base-100">
+          <a href={home} class="px-5 py-4 font-mono text-base font-semibold">
+            cloudflare<span class="text-primary">Ops</span>
+          </a>
+          <nav class="flex-1 px-2">
+            <ul class="menu w-full gap-0.5 p-0">
+              {nav.map(({ href, label, Icon }) => (
+                <li>
+                  <a
+                    href={href}
+                    class:list={['rounded-md px-3 py-1.5', isActive(href) && 'bg-base-300/60 font-medium']}
+                  >
+                    <Icon size={16} strokeWidth={1.75} />
+                    {label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <div class="mt-4 border-t border-base-300 px-3 pt-3 text-xs opacity-40">{t(locale, 'nav.upcoming')}</div>
+            <ul class="menu w-full gap-0.5 p-0 opacity-40">
+              {upcoming.map(({ label, Icon }) => (
+                <li>
+                  <span class="cursor-not-allowed px-3 py-1.5">
+                    <Icon size={16} strokeWidth={1.75} />
+                    {label}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </nav>
+          <div class="border-t border-base-300 px-5 py-3 font-mono text-xs">
+            <span class="opacity-40">cflareOps</span>
+          </div>
+        </aside>
+      </div>
+    </div>
+    <script is:inline>
+      document.getElementById('sidebar-toggle')?.addEventListener('click', function () {
+        var drawer = document.getElementById('app-drawer');
+        if (!drawer) return;
+        var open = drawer.classList.toggle('lg:drawer-open');
+        document.cookie = 'sidebar=' + (open ? 'open' : 'hidden') + ';path=/;max-age=31536000;samesite=lax';
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,81 @@
+@import "tailwindcss";
+@import "@fontsource-variable/jetbrains-mono";
+
+@plugin "daisyui";
+
+@plugin "daisyui/theme" {
+  name: "flare";
+  default: true;
+  color-scheme: dark;
+  --color-base-100: #15181d;
+  --color-base-200: #0e1013;
+  --color-base-300: #262b33;
+  --color-base-content: #e7e9ec;
+  --color-primary: #f6821f;
+  --color-primary-content: #180d02;
+  --color-secondary: #58a6ff;
+  --color-secondary-content: #04121f;
+  --color-accent: #d2a8ff;
+  --color-accent-content: #16091f;
+  --color-neutral: #2d333b;
+  --color-neutral-content: #e7e9ec;
+  --color-info: #58a6ff;
+  --color-info-content: #04121f;
+  --color-success: #3fb950;
+  --color-success-content: #04170a;
+  --color-warning: #d29922;
+  --color-warning-content: #1b1302;
+  --color-error: #f85149;
+  --color-error-content: #200404;
+  --radius-box: 0.5rem;
+  --radius-field: 0.375rem;
+  --radius-selector: 0.25rem;
+  --border: 1px;
+}
+
+@plugin "daisyui/theme" {
+  name: "flare-light";
+  color-scheme: light;
+  --color-base-100: #ffffff;
+  --color-base-200: #f5f6f8;
+  --color-base-300: #e3e6ea;
+  --color-base-content: #1a1d21;
+  --color-primary: #f6821f;
+  --color-primary-content: #180d02;
+  --color-secondary: #0969da;
+  --color-secondary-content: #ffffff;
+  --color-accent: #8250df;
+  --color-accent-content: #ffffff;
+  --color-neutral: #e3e6ea;
+  --color-neutral-content: #1a1d21;
+  --color-info: #0969da;
+  --color-info-content: #ffffff;
+  --color-success: #1a7f37;
+  --color-success-content: #ffffff;
+  --color-warning: #9a6700;
+  --color-warning-content: #ffffff;
+  --color-error: #cf222e;
+  --color-error-content: #ffffff;
+  --radius-box: 0.5rem;
+  --radius-field: 0.375rem;
+  --radius-selector: 0.25rem;
+  --border: 1px;
+}
+
+html {
+  font-family: system-ui, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+
+code,
+kbd,
+pre,
+.font-mono {
+  font-family: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -1,0 +1,33 @@
+---
+import MainLayout from '../../../../layouts/MainLayout.astro';
+import PagesDetailPanel from '../../../../components/PagesDetailPanel';
+import { t } from '../../../../i18n';
+import { localeFromPath, localizePath } from '../../../../i18n/routing';
+import { appContext } from '../../../../server/context';
+import { getCachedPagesProject } from '../../../../server/workersPages';
+const { accountId, name } = Astro.params;
+const locale = localeFromPath(Astro.url.pathname);
+const { db, userEmail } = await appContext(Astro.locals);
+const cfAccountId = Astro.url.searchParams.get('cfAccountId') ?? undefined;
+const initialTab = Astro.url.searchParams.get('tab');
+const project = await getCachedPagesProject(db, userEmail, accountId!, name!, cfAccountId);
+const displayName = project?.name ?? name!;
+---
+<MainLayout title={`${t(locale, 'workers.projectDetailTitle')} · ${displayName}`} locale={locale}>
+  <nav class="breadcrumbs mb-4 text-sm">
+    <ul>
+      <li><a href={`${localizePath(locale, '/workers')}?tab=pages`}>{t(locale, 'nav.workersPages')}</a></li>
+      <li class="font-mono">{displayName}</li>
+    </ul>
+  </nav>
+  <PagesDetailPanel
+    accountId={accountId!}
+    name={name!}
+    locale={locale}
+    accountName={project?.accountName ?? null}
+    cfAccountName={project?.cfAccountName ?? null}
+    cfAccountId={cfAccountId ?? null}
+    initialTab={initialTab}
+    client:load
+  />
+</MainLayout>

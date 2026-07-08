@@ -1,0 +1,9 @@
+# 复制为 .dev.vars 供 wrangler pages dev 使用；astro dev 用 DEV_MODE 旁路认证
+DEV_MODE=true
+# DEV 模式下的模拟登录身份（数据按用户隔离；改这个值可在本地模拟不同用户）
+DEV_USER_EMAIL=dev@localhost
+ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
+# 注意：本地开发不要设置以下两项 —— DEV_MODE 旁路与 Access 配置互斥（安全护栏），
+# 两者同时存在时旁路会被禁用导致本地 403。生产环境通过 Pages secrets 配置它们。
+# CF_ACCESS_TEAM_DOMAIN=yourteam.cloudflareaccess.com
+# CF_ACCESS_AUD=your-access-application-aud-tag

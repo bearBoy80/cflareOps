@@ -1,0 +1,22 @@
+---
+import MainLayout from '../../../layouts/MainLayout.astro';
+import DnsPanel from '../../../components/DnsPanel';
+import { t } from '../../../i18n';
+import { localeFromPath, localizePath } from '../../../i18n/routing';
+import { appContext } from '../../../server/context';
+import { getCachedZone } from '../../../server/zones';
+const { zoneId } = Astro.params;
+const locale = localeFromPath(Astro.url.pathname);
+const { db, userEmail } = await appContext(Astro.locals);
+const zone = await getCachedZone(db, userEmail, zoneId!);
+const zoneName = zone?.name ?? zoneId!;
+---
+<MainLayout title={`${t(locale, 'dns.pageTitle')} · ${zoneName}`} locale={locale}>
+  <nav class="breadcrumbs mb-4 text-sm">
+    <ul>
+      <li><a href={localizePath(locale, '/zones')}>{t(locale, 'nav.zones')}</a></li>
+      <li class="font-mono">{zoneName}</li>
+    </ul>
+  </nav>
+  <DnsPanel zoneId={zoneId!} locale={locale} zoneName={zoneName} client:load />
+</MainLayout>

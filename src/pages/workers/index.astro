@@ -1,0 +1,12 @@
+---
+import MainLayout from '../../layouts/MainLayout.astro';
+import WorkersPanel from '../../components/WorkersPanel';
+import { t } from '../../i18n';
+import { localeFromPath } from '../../i18n/routing';
+const locale = localeFromPath(Astro.url.pathname);
+const tabParam = Astro.url.searchParams.get('tab');
+const initialTab = tabParam === 'pages' || tabParam === 'scripts' ? tabParam : undefined;
+---
+<MainLayout title={t(locale, 'workers.pageTitle')} locale={locale}>
+  <WorkersPanel client:load locale={locale} initialTab={initialTab} />
+</MainLayout>

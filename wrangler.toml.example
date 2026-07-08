@@ -1,0 +1,10 @@
+name = "cloudflareops"
+compatibility_date = "2026-06-01"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "./dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cloudflareops-db"
+# Run `wrangler d1 create cloudflareops-db` and paste the returned UUID here.
+database_id = "REPLACE_AFTER_wrangler_d1_create"

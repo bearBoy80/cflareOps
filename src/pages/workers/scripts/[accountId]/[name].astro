@@ -1,0 +1,24 @@
+---
+import MainLayout from '../../../../layouts/MainLayout.astro';
+import WorkerDetailPanel from '../../../../components/WorkerDetailPanel';
+import { t } from '../../../../i18n';
+import { localeFromPath, localizePath } from '../../../../i18n/routing';
+import { appContext } from '../../../../server/context';
+import { getCachedWorkerScript } from '../../../../server/workersPages';
+const { accountId, name } = Astro.params;
+const locale = localeFromPath(Astro.url.pathname);
+const { db, userEmail } = await appContext(Astro.locals);
+const cfAccountId = Astro.url.searchParams.get('cfAccountId') ?? undefined;
+const initialTab = Astro.url.searchParams.get('tab');
+const script = await getCachedWorkerScript(db, userEmail, accountId!, name!, cfAccountId);
+const displayName = script?.id ?? name!;
+---
+<MainLayout title={`${t(locale, 'workers.scriptDetailTitle')} · ${displayName}`} locale={locale}>
+  <nav class="breadcrumbs mb-4 text-sm">
+    <ul>
+      <li><a href={`${localizePath(locale, '/workers')}?tab=scripts`}>{t(locale, 'nav.workersPages')}</a></li>
+      <li class="font-mono">{displayName}</li>
+    </ul>
+  </nav>
+  <WorkerDetailPanel accountId={accountId!} name={name!} locale={locale} cfAccountId={cfAccountId ?? null} initialTab={initialTab} client:load />
+</MainLayout>
