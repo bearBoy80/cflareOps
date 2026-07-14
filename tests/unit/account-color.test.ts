@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ACCOUNT_HUES, accountColor } from '../../src/lib/accountColor';
+import { ACCOUNT_HUES, accountColor } from '@/lib/accountColor';
 
 describe('accountColor', () => {
   it('is deterministic for the same id', () => {

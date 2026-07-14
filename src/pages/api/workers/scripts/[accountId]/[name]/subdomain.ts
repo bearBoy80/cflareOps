@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
-import { appContext, handleCfError, jsonError } from '../../../../../../server/context';
-import { clientForAccount, getCachedWorkerScript } from '../../../../../../server/workersPages';
+import { appContext, handleCfError, jsonError } from '@/server/context';
+import { clientForAccount, getCachedWorkerScript } from '@/server/workersPages';
 
 /** workers.dev 子域名：GET 聚合账号子域名 + 脚本开关；PUT 切换开关（两布尔必填） */
 export const GET: APIRoute = async ({ params, locals, request }) => {

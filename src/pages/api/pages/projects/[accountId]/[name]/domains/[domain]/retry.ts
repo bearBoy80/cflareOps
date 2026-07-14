@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
-import { appContext, handleCfError, jsonError } from '../../../../../../../../server/context';
-import { clientForAccount, getCachedPagesProject } from '../../../../../../../../server/workersPages';
+import { appContext, handleCfError, jsonError } from '@/server/context';
+import { clientForAccount, getCachedPagesProject } from '@/server/workersPages';
 
 /** 重新触发域名验证（domains.edit 语义）。 */
 export const POST: APIRoute = async ({ params, locals, request }) => {

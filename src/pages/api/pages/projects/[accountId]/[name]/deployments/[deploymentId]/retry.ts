@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
-import { appContext, handleCfError, jsonError } from '../../../../../../../../server/context';
-import { clientForAccount, getCachedPagesProject } from '../../../../../../../../server/workersPages';
+import { appContext, handleCfError, jsonError } from '@/server/context';
+import { clientForAccount, getCachedPagesProject } from '@/server/workersPages';
 
 /** 重试部署（需要 token 具备 Pages:Edit，403 由 handleCfError 透出可读错误）。 */
 export const POST: APIRoute = async ({ params, locals, request }) => {

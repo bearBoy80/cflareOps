@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
-import { COMPAT_DATE_RE, parseBindingInputs, toSdkBindings } from '../../../../../../lib/workerSettingsEdit';
-import { appContext, handleCfError, jsonError } from '../../../../../../server/context';
-import { clientForAccount, getCachedWorkerScript } from '../../../../../../server/workersPages';
+import { COMPAT_DATE_RE, parseBindingInputs, toSdkBindings } from '@/lib/workerSettingsEdit';
+import { appContext, handleCfError, jsonError } from '@/server/context';
+import { clientForAccount, getCachedWorkerScript } from '@/server/workersPages';
 
 /**
  * 编辑绑定与配置（PUT 路由，透传至 CF 的 PATCH /settings，即 scriptAndVersionSettings.edit）。bindings 为整组替换语义：

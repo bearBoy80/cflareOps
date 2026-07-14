@@ -1,10 +1,10 @@
 ---
-import MainLayout from '../../../layouts/MainLayout.astro';
-import DnsPanel from '../../../components/DnsPanel';
-import { t } from '../../../i18n';
-import { localeFromPath, localizePath } from '../../../i18n/routing';
-import { appContext } from '../../../server/context';
-import { getCachedZone } from '../../../server/zones';
+import MainLayout from '@/layouts/MainLayout.astro';
+import DnsPanel from '@/components/DnsPanel';
+import { t } from '@/i18n';
+import { localeFromPath, localizePath } from '@/i18n/routing';
+import { appContext } from '@/server/context';
+import { getCachedZone } from '@/server/zones';
 const { zoneId } = Astro.params;
 const locale = localeFromPath(Astro.url.pathname);
 const { db, userEmail } = await appContext(Astro.locals);

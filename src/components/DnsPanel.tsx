@@ -1,7 +1,7 @@
 import { ArrowDown, ArrowUp, ArrowUpDown, Check, Cloud, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { type Locale, t } from '../i18n';
-import { DNS_VALIDATION_MESSAGES, type DnsValidationError, validateDnsRecord } from '../lib/dnsRecordValidation';
+import { type Locale, t } from '@/i18n';
+import { DNS_VALIDATION_MESSAGES, type DnsValidationError, validateDnsRecord } from '@/lib/dnsRecordValidation';
 import { ConfirmDialogProvider, useConfirm } from './ui/ConfirmDialog';
 import { ToastProvider, useToast } from './ui/ToastProvider';
 

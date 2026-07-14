@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
-import { isHostname } from '../../../../../../lib/dnsRecordValidation';
-import { appContext, handleCfError, jsonError } from '../../../../../../server/context';
-import { clientForAccount, findZoneForHostname, getCachedWorkerScript } from '../../../../../../server/workersPages';
+import { isHostname } from '@/lib/dnsRecordValidation';
+import { appContext, handleCfError, jsonError } from '@/server/context';
+import { clientForAccount, findZoneForHostname, getCachedWorkerScript } from '@/server/workersPages';
 
 /** 挂载 Worker 自定义域：hostname 必须落在脚本所属 CF 账号已聚合的某个 zone 内（跨 CF 账号 zone_id 会被 CF 拒绝）。 */
 export const POST: APIRoute = async ({ params, locals, request }) => {

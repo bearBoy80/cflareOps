@@ -1,10 +1,10 @@
+import { createTestDb } from '@tests/helpers/d1';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { GET as getContent, PUT as putContent } from '../../src/pages/api/workers/scripts/[accountId]/[name]/content';
-import type { CfAccount, CfPagesProject, CfWorkerScript } from '../../src/server/cf/types';
-import { encryptSecret, importEncryptionKey } from '../../src/server/crypto';
-import { insertAccount } from '../../src/server/db/accounts';
-import { syncWorkersPages } from '../../src/server/workersPages';
-import { createTestDb } from '../helpers/d1';
+import { GET as getContent, PUT as putContent } from '@/pages/api/workers/scripts/[accountId]/[name]/content';
+import type { CfAccount, CfPagesProject, CfWorkerScript } from '@/server/cf/types';
+import { encryptSecret, importEncryptionKey } from '@/server/crypto';
+import { insertAccount } from '@/server/db/accounts';
+import { syncWorkersPages } from '@/server/workersPages';
 
 const HEX_KEY = 'b'.repeat(64);
 const ALICE = 'alice@ops.dev';

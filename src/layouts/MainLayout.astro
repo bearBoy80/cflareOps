@@ -1,10 +1,10 @@
 ---
-import '../styles/global.css';
+import '@/styles/global.css';
 import { BarChart3, Check, ChevronDown, Database, Globe, Languages, LayoutDashboard, LogOut, Menu, PanelLeft, UserRound, Users, Workflow } from 'lucide-react';
-import { LOCALES, t, type Locale } from '../i18n';
-import { localizePath } from '../i18n/routing';
-import { shouldBypassAuth } from '../server/auth';
-import ThemeToggle from '../components/ThemeToggle';
+import { LOCALES, t, type Locale } from '@/i18n';
+import { localizePath } from '@/i18n/routing';
+import { shouldBypassAuth } from '@/server/auth';
+import ThemeToggle from '@/components/ThemeToggle';
 interface Props { title: string; locale: Locale }
 const { title, locale } = Astro.props;
 const current = Astro.url.pathname;

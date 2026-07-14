@@ -1,23 +1,17 @@
+import { createTestDb } from '@tests/helpers/d1';
 import { describe, expect, it } from 'vitest';
-import { POST as postDeployment } from '../../src/pages/api/pages/projects/[accountId]/[name]/deployments';
-import {
-  GET as getPagesDomains,
-  POST as postPagesDomain,
-} from '../../src/pages/api/pages/projects/[accountId]/[name]/domains';
-import { POST as purgeBuildCache } from '../../src/pages/api/pages/projects/[accountId]/[name]/purge-build-cache';
-import { PUT as putCrons } from '../../src/pages/api/workers/scripts/[accountId]/[name]/crons';
-import { POST as postWorkerDomain } from '../../src/pages/api/workers/scripts/[accountId]/[name]/domains';
-import { GET as getSecrets, PUT as putSecret } from '../../src/pages/api/workers/scripts/[accountId]/[name]/secrets';
-import { PUT as putSettings } from '../../src/pages/api/workers/scripts/[accountId]/[name]/settings';
-import {
-  GET as getSubdomain,
-  PUT as putSubdomain,
-} from '../../src/pages/api/workers/scripts/[accountId]/[name]/subdomain';
-import type { CfAccount, CfPagesProject, CfWorkerScript } from '../../src/server/cf/types';
-import { encryptSecret, importEncryptionKey } from '../../src/server/crypto';
-import { insertAccount } from '../../src/server/db/accounts';
-import { syncWorkersPages } from '../../src/server/workersPages';
-import { createTestDb } from '../helpers/d1';
+import { POST as postDeployment } from '@/pages/api/pages/projects/[accountId]/[name]/deployments';
+import { GET as getPagesDomains, POST as postPagesDomain } from '@/pages/api/pages/projects/[accountId]/[name]/domains';
+import { POST as purgeBuildCache } from '@/pages/api/pages/projects/[accountId]/[name]/purge-build-cache';
+import { PUT as putCrons } from '@/pages/api/workers/scripts/[accountId]/[name]/crons';
+import { POST as postWorkerDomain } from '@/pages/api/workers/scripts/[accountId]/[name]/domains';
+import { GET as getSecrets, PUT as putSecret } from '@/pages/api/workers/scripts/[accountId]/[name]/secrets';
+import { PUT as putSettings } from '@/pages/api/workers/scripts/[accountId]/[name]/settings';
+import { GET as getSubdomain, PUT as putSubdomain } from '@/pages/api/workers/scripts/[accountId]/[name]/subdomain';
+import type { CfAccount, CfPagesProject, CfWorkerScript } from '@/server/cf/types';
+import { encryptSecret, importEncryptionKey } from '@/server/crypto';
+import { insertAccount } from '@/server/db/accounts';
+import { syncWorkersPages } from '@/server/workersPages';
 
 const HEX_KEY = 'b'.repeat(64);
 const ALICE = 'alice@ops.dev';

@@ -1,8 +1,8 @@
 import type { APIRoute } from 'astro';
-import { CfClient } from '../../../../server/cf/client';
-import { appContext, jsonError } from '../../../../server/context';
-import { decryptSecret } from '../../../../server/crypto';
-import { getAccount, updateAccountStatus } from '../../../../server/db/accounts';
+import { CfClient } from '@/server/cf/client';
+import { appContext, jsonError } from '@/server/context';
+import { decryptSecret } from '@/server/crypto';
+import { getAccount, updateAccountStatus } from '@/server/db/accounts';
 
 export const POST: APIRoute = async ({ params, locals }) => {
   const { db, key, userEmail } = await appContext(locals);

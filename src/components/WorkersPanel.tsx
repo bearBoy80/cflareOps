@@ -1,9 +1,9 @@
 import { ArrowDown, ArrowUp, ArrowUpDown, RefreshCw, Search, Workflow } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
-import { type Locale, t } from '../i18n';
-import { localizePath } from '../i18n/routing';
-import { accountColor } from '../lib/accountColor';
-import { relativeTime } from '../lib/time';
+import { type Locale, t } from '@/i18n';
+import { localizePath } from '@/i18n/routing';
+import { accountColor } from '@/lib/accountColor';
+import { relativeTime } from '@/lib/time';
 import TablePagination from './ui/TablePagination';
 import { ToastProvider, useToast } from './ui/ToastProvider';
 

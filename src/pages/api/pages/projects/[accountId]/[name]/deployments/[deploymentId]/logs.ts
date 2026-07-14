@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
-import { appContext, handleCfError, jsonError } from '../../../../../../../../server/context';
-import { clientForAccount, getCachedPagesProject } from '../../../../../../../../server/workersPages';
+import { appContext, handleCfError, jsonError } from '@/server/context';
+import { clientForAccount, getCachedPagesProject } from '@/server/workersPages';
 
 /** Pages 部署构建日志。 */
 export const GET: APIRoute = async ({ params, locals, request }) => {

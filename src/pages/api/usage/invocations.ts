@@ -1,13 +1,13 @@
 import type { APIRoute } from 'astro';
-import { appContext, jsonError } from '../../../server/context';
+import { appContext, jsonError } from '@/server/context';
 import {
   ensureUsageHourlySnapshots,
   ensureUsageSnapshots,
   queryUsageDaily,
   queryUsageHourly,
   usageSeries,
-} from '../../../server/usage';
-import { clientForAccount } from '../../../server/workersPages';
+} from '@/server/usage';
+import { clientForAccount } from '@/server/workersPages';
 
 const RANGE_DAYS: Record<string, number> = { '7d': 7, '30d': 30 };
 const KINDS = { workers: 'worker', pages: 'pages' } as const;

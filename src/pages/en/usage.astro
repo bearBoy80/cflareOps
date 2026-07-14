@@ -1,8 +1,8 @@
 ---
-import UsagePanel from '../../components/UsagePanel';
-import { t } from '../../i18n';
-import { localeFromPath } from '../../i18n/routing';
-import MainLayout from '../../layouts/MainLayout.astro';
+import UsagePanel from '@/components/UsagePanel';
+import { t } from '@/i18n';
+import { localeFromPath } from '@/i18n/routing';
+import MainLayout from '@/layouts/MainLayout.astro';
 const locale = localeFromPath(Astro.url.pathname);
 const initialTab = Astro.url.searchParams.get('tab');
 ---

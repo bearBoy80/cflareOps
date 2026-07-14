@@ -1,8 +1,8 @@
 ---
-import DashboardPanel from '../components/DashboardPanel';
-import MainLayout from '../layouts/MainLayout.astro';
-import { t } from '../i18n';
-import { localeFromPath, localizePath } from '../i18n/routing';
+import DashboardPanel from '@/components/DashboardPanel';
+import MainLayout from '@/layouts/MainLayout.astro';
+import { t } from '@/i18n';
+import { localeFromPath, localizePath } from '@/i18n/routing';
 const locale = localeFromPath(Astro.url.pathname);
 ---
 <MainLayout title={t(locale, 'nav.overview')} locale={locale}>

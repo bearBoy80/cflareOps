@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
-import type { Db, DbStatement } from '../../src/server/db/types';
+import type { Db, DbStatement } from '@/server/db/types';
 
 /** Internal shape that carries the sync run for use inside batch transactions. */
 interface InternalDbStatement extends DbStatement {

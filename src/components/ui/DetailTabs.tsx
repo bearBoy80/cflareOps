@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { resolveTabParam } from '../../lib/tabParam';
+import { resolveTabParam } from '@/lib/tabParam';
 
 /**
  * 详情页共享 tab 条。tab 状态由 useDetailTab 持有并同步到 URL ?tab=

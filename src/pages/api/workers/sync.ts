@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
-import { appContext } from '../../../server/context';
-import { syncWorkersPages } from '../../../server/workersPages';
+import { appContext } from '@/server/context';
+import { syncWorkersPages } from '@/server/workersPages';
 
 export const POST: APIRoute = async ({ locals, request }) => {
   const { db, key, userEmail } = await appContext(locals);

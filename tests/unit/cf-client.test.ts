@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CfApiError, CfClient } from '../../src/server/cf/client';
+import { CfApiError, CfClient } from '@/server/cf/client';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });

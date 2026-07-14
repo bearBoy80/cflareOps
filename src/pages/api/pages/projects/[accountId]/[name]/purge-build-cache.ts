@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
-import { appContext, handleCfError, jsonError } from '../../../../../../server/context';
-import { clientForAccount, getCachedPagesProject } from '../../../../../../server/workersPages';
+import { appContext, handleCfError, jsonError } from '@/server/context';
+import { clientForAccount, getCachedPagesProject } from '@/server/workersPages';
 
 export const POST: APIRoute = async ({ params, locals, request }) => {
   const { db, key, userEmail } = await appContext(locals);

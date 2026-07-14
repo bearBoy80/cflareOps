@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { COMPAT_DATE_RE, parseBindingInputs, toSdkBindings } from '../../src/lib/workerSettingsEdit';
+import { COMPAT_DATE_RE, parseBindingInputs, toSdkBindings } from '@/lib/workerSettingsEdit';
 
 describe('COMPAT_DATE_RE', () => {
   it('matches YYYY-MM-DD only', () => {

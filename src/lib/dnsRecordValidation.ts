@@ -1,5 +1,5 @@
 // DNS 记录字段校验：前端表单与 API 路由共用，返回错误码由调用方映射为本地化文案。
-import type { MessageKey } from '../i18n';
+import type { MessageKey } from '@/i18n';
 
 export type DnsValidationError = 'name' | 'content' | 'ipv4' | 'ipv6' | 'hostname' | 'priority' | 'ttl';
 

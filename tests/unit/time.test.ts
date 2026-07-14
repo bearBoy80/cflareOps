@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { relativeTime } from '../../src/lib/time';
+import { relativeTime } from '@/lib/time';
 
 describe('relativeTime', () => {
   const past = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(); // 2 hours ago

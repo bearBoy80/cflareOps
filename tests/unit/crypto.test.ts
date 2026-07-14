@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decryptSecret, encryptSecret, importEncryptionKey, sha256Hex } from '../../src/server/crypto';
+import { decryptSecret, encryptSecret, importEncryptionKey, sha256Hex } from '@/server/crypto';
 
 const HEX_KEY = 'a'.repeat(64);
 

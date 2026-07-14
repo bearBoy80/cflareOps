@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GET } from '../../src/pages/api/zones/index';
+import { GET } from '@/pages/api/zones/index';
 
 const HEX_KEY = 'a'.repeat(64);
 

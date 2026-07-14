@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
-import { appContext, handleCfError, jsonError } from '../../../../../../server/context';
-import { clientForAccount, getCachedWorkerScript } from '../../../../../../server/workersPages';
+import { appContext, handleCfError, jsonError } from '@/server/context';
+import { clientForAccount, getCachedWorkerScript } from '@/server/workersPages';
 
 /** Worker 源码（懒加载，JSON：{ content, mainModule, multiModule, etag }）。owner 校验同详情路由：先查缓存行拿 cf_account_id。 */
 export const GET: APIRoute = async ({ params, locals, request }) => {

@@ -1,8 +1,9 @@
+import { createTestDb } from '@tests/helpers/d1';
 import { describe, expect, it } from 'vitest';
-import { CfApiError, CfClient } from '../../src/server/cf/client';
-import type { CfAccount, CfDnsRecordInput, CfPagesProject, CfWorkerScript } from '../../src/server/cf/types';
-import { encryptSecret, importEncryptionKey } from '../../src/server/crypto';
-import { deleteAccount, insertAccount } from '../../src/server/db/accounts';
+import { CfApiError, CfClient } from '@/server/cf/client';
+import type { CfAccount, CfDnsRecordInput, CfPagesProject, CfWorkerScript } from '@/server/cf/types';
+import { encryptSecret, importEncryptionKey } from '@/server/crypto';
+import { deleteAccount, insertAccount } from '@/server/db/accounts';
 import {
   clientForAccount,
   createPagesDnsRecord,
@@ -11,8 +12,7 @@ import {
   listCachedWorkersScripts,
   syncWorkersPages,
   workersStats,
-} from '../../src/server/workersPages';
-import { createTestDb } from '../helpers/d1';
+} from '@/server/workersPages';
 
 const HEX_KEY = 'b'.repeat(64);
 const ALICE = 'alice@ops.dev';

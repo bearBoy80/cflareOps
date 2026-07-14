@@ -1,5 +1,5 @@
+import { createTestDb } from '@tests/helpers/d1';
 import { describe, expect, it } from 'vitest';
-import { createTestDb } from '../helpers/d1';
 
 describe('createTestDb', () => {
   it('applies schema and supports bind/first/all/run', async () => {

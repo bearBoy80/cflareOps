@@ -83,6 +83,7 @@ Tests run under Node (not workerd). `tests/helpers/d1.ts` `createTestDb()` build
 ## Conventions
 
 - **CfClient is the boundary.** No direct `fetch` to `api.cloudflare.com` outside `src/server/cf/client.ts`.
+- **Imports use path aliases, never parent-relative paths.** `@/*` → `src/*`, `@tests/*` → `tests/*`, defined in `tsconfig.json` `paths` and mirrored in `vitest.config.ts` `resolve.alias` (Astro reads tsconfig aliases natively; Vitest does not). Same-directory `./` imports are fine.
 - **Scope every user-data query by `owner_email`.**
 - **API errors:** throw `ConfigError`/`NotFoundError`/`CfApiError`; let the middleware boundary or `handleCfError` map them. Give new config failures a stable `code` so the frontend can localize a diagnostic.
 - **New user-facing strings go in `src/i18n/index.ts`** for both `zh` and `en`; add the English page under `src/pages/en/**`.

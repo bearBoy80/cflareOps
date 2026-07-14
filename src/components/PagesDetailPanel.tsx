@@ -1,9 +1,9 @@
 import { AlertTriangle, Eraser, History, Plus, RefreshCw, Rocket, RotateCcw, ScrollText, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { type Locale, type MessageKey, t } from '../i18n';
-import { accountColor } from '../lib/accountColor';
-import { isHostname } from '../lib/dnsRecordValidation';
-import { relativeTime } from '../lib/time';
+import { type Locale, type MessageKey, t } from '@/i18n';
+import { accountColor } from '@/lib/accountColor';
+import { isHostname } from '@/lib/dnsRecordValidation';
+import { relativeTime } from '@/lib/time';
 import { ConfirmDialogProvider, useConfirm } from './ui/ConfirmDialog';
 import DetailTabs, { useDetailTab } from './ui/DetailTabs';
 import TablePagination from './ui/TablePagination';

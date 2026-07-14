@@ -1,8 +1,8 @@
 import { AlertTriangle, Globe, PanelsTopLeft, RefreshCw, Users, Workflow } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { type Locale, type MessageKey, t } from '../i18n';
-import { localizePath } from '../i18n/routing';
-import { relativeTime } from '../lib/time';
+import { type Locale, type MessageKey, t } from '@/i18n';
+import { localizePath } from '@/i18n/routing';
+import { relativeTime } from '@/lib/time';
 
 interface Stats {
   accounts: { total: number; errors: number };

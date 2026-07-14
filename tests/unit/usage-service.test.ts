@@ -1,7 +1,8 @@
+import { createTestDb } from '@tests/helpers/d1';
 import { describe, expect, it } from 'vitest';
-import type { CfAccount, CfPagesProject, CfWorkerScript } from '../../src/server/cf/types';
-import { encryptSecret, importEncryptionKey } from '../../src/server/crypto';
-import { insertAccount } from '../../src/server/db/accounts';
+import type { CfAccount, CfPagesProject, CfWorkerScript } from '@/server/cf/types';
+import { encryptSecret, importEncryptionKey } from '@/server/crypto';
+import { insertAccount } from '@/server/db/accounts';
 import {
   ensureUsageHourlySnapshots,
   ensureUsageSnapshots,
@@ -10,9 +11,8 @@ import {
   targetDays,
   targetHours,
   usageSeries,
-} from '../../src/server/usage';
-import { syncWorkersPages } from '../../src/server/workersPages';
-import { createTestDb } from '../helpers/d1';
+} from '@/server/usage';
+import { syncWorkersPages } from '@/server/workersPages';
 
 const HEX_KEY = 'b'.repeat(64);
 const ALICE = 'alice@ops.dev';

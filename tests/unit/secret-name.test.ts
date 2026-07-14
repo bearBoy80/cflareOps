@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isSecretName, SECRET_NAME_RE } from '../../src/lib/secretName';
+import { isSecretName, SECRET_NAME_RE } from '@/lib/secretName';
 
 describe('isSecretName', () => {
   it('accepts letter/underscore-leading identifiers', () => {

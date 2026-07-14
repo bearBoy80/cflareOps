@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pagesDevTarget } from '../../src/lib/pagesDevTarget';
+import { pagesDevTarget } from '@/lib/pagesDevTarget';
 
 describe('pagesDevTarget', () => {
   it('keeps a subdomain that already ends with .pages.dev', () => {

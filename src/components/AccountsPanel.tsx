@@ -1,8 +1,8 @@
 import { Activity, Check, KeyRound, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { type Locale, type MessageKey, t } from '../i18n';
-import { accountColor } from '../lib/accountColor';
-import { relativeTime } from '../lib/time';
+import { type Locale, type MessageKey, t } from '@/i18n';
+import { accountColor } from '@/lib/accountColor';
+import { relativeTime } from '@/lib/time';
 import { ConfirmDialogProvider, useConfirm } from './ui/ConfirmDialog';
 import TablePagination from './ui/TablePagination';
 import { ToastProvider, useToast } from './ui/ToastProvider';

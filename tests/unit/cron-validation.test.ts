@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isCronExpression, validateCrons } from '../../src/lib/cronValidation';
+import { isCronExpression, validateCrons } from '@/lib/cronValidation';
 
 describe('isCronExpression', () => {
   it.each(['*/30 * * * *', '0 3 * * MON', '5 0 * 8 *', '0,30 1-5 * JAN-MAR SUN'])('accepts %s', (c) => {

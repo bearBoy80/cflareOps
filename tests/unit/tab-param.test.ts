@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveTabParam } from '../../src/lib/tabParam';
+import { resolveTabParam } from '@/lib/tabParam';
 
 const KEYS = ['overview', 'config', 'deploys', 'source'] as const;
 

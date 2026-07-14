@@ -1,8 +1,8 @@
 ---
-import MainLayout from '../../layouts/MainLayout.astro';
-import AccountsPanel from '../../components/AccountsPanel';
-import { t } from '../../i18n';
-import { localeFromPath } from '../../i18n/routing';
+import MainLayout from '@/layouts/MainLayout.astro';
+import AccountsPanel from '@/components/AccountsPanel';
+import { t } from '@/i18n';
+import { localeFromPath } from '@/i18n/routing';
 const locale = localeFromPath(Astro.url.pathname);
 ---
 <MainLayout title={t(locale, 'accounts.pageTitle')} locale={locale}>

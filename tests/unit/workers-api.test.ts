@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { GET as getPagesProjects } from '../../src/pages/api/pages/projects/index';
-import { GET as getWorkersScripts } from '../../src/pages/api/workers/scripts/index';
+import { GET as getPagesProjects } from '@/pages/api/pages/projects/index';
+import { GET as getWorkersScripts } from '@/pages/api/workers/scripts/index';
 
 const HEX_KEY = 'a'.repeat(64);
 

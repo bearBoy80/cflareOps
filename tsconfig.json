@@ -3,7 +3,11 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "types": ["@cloudflare/workers-types", "vite/client"],
-    "baseUrl": "."
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"],
+      "@tests/*": ["tests/*"]
+    }
   },
   "include": ["src/**/*", "tests/**/*"],
   "exclude": ["dist", "node_modules"]

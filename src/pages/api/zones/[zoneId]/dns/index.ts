@@ -1,9 +1,9 @@
 import type { APIRoute } from 'astro';
-import { t } from '../../../../../i18n';
-import { DNS_VALIDATION_MESSAGES, validateDnsRecord } from '../../../../../lib/dnsRecordValidation';
-import type { CfDnsRecordInput } from '../../../../../server/cf/types';
-import { appContext, handleCfError, jsonError } from '../../../../../server/context';
-import { clientForZone } from '../../../../../server/zones';
+import { t } from '@/i18n';
+import { DNS_VALIDATION_MESSAGES, validateDnsRecord } from '@/lib/dnsRecordValidation';
+import type { CfDnsRecordInput } from '@/server/cf/types';
+import { appContext, handleCfError, jsonError } from '@/server/context';
+import { clientForZone } from '@/server/zones';
 
 export const GET: APIRoute = async ({ params, locals }) => {
   const { db, key, userEmail } = await appContext(locals);

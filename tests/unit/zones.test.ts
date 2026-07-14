@@ -1,10 +1,10 @@
+import { createTestDb } from '@tests/helpers/d1';
 import { describe, expect, it } from 'vitest';
-import type { CfZone } from '../../src/server/cf/types';
-import { encryptSecret, importEncryptionKey } from '../../src/server/crypto';
-import { insertAccount } from '../../src/server/db/accounts';
-import type { Db } from '../../src/server/db/types';
-import { clientForZone, getCachedZone, listCachedZones, syncAllZones, zoneStats } from '../../src/server/zones';
-import { createTestDb } from '../helpers/d1';
+import type { CfZone } from '@/server/cf/types';
+import { encryptSecret, importEncryptionKey } from '@/server/crypto';
+import { insertAccount } from '@/server/db/accounts';
+import type { Db } from '@/server/db/types';
+import { clientForZone, getCachedZone, listCachedZones, syncAllZones, zoneStats } from '@/server/zones';
 
 const HEX_KEY = 'b'.repeat(64);
 const ALICE = 'alice@ops.dev';

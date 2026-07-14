@@ -1,3 +1,4 @@
+import { createTestDb } from '@tests/helpers/d1';
 import { describe, expect, it } from 'vitest';
 import {
   countAccounts,
@@ -7,8 +8,7 @@ import {
   listAccounts,
   updateAccount,
   updateAccountStatus,
-} from '../../src/server/db/accounts';
-import { createTestDb } from '../helpers/d1';
+} from '@/server/db/accounts';
 
 const ALICE = 'alice@ops.dev';
 const BOB = 'bob@ops.dev';

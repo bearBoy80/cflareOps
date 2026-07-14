@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
-import { isSecretName } from '../../../../../../lib/secretName';
-import { appContext, handleCfError, jsonError } from '../../../../../../server/context';
-import { clientForAccount, getCachedWorkerScript } from '../../../../../../server/workersPages';
+import { isSecretName } from '@/lib/secretName';
+import { appContext, handleCfError, jsonError } from '@/server/context';
+import { clientForAccount, getCachedWorkerScript } from '@/server/workersPages';
 
 /** Secrets 列表（只有 name/type，值不可读取）。 */
 export const GET: APIRoute = async ({ params, locals, request }) => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shouldBypassAuth } from '../../src/server/auth';
+import { shouldBypassAuth } from '@/server/auth';
 
 describe('shouldBypassAuth', () => {
   it('bypasses only when DEV_MODE === "true"', () => {

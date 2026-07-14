@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { LOCALES, resolveLocale, t } from '../../src/i18n';
-import { localeFromPath, localizePath } from '../../src/i18n/routing';
+import { LOCALES, resolveLocale, t } from '@/i18n';
+import { localeFromPath, localizePath } from '@/i18n/routing';
 
 describe('i18n routing', () => {
   it('derives locale from /en path prefix', () => {

@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
-import { validateCrons } from '../../../../../../lib/cronValidation';
-import { appContext, handleCfError, jsonError } from '../../../../../../server/context';
-import { clientForAccount, getCachedWorkerScript } from '../../../../../../server/workersPages';
+import { validateCrons } from '@/lib/cronValidation';
+import { appContext, handleCfError, jsonError } from '@/server/context';
+import { clientForAccount, getCachedWorkerScript } from '@/server/workersPages';
 
 /** 整组替换 cron 触发器。服务端做 5 段 cron 预检（CF 侧是权威校验）。 */
 export const PUT: APIRoute = async ({ params, locals, request }) => {

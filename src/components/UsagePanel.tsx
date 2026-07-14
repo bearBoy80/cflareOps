@@ -1,9 +1,9 @@
 import { AlertTriangle, RefreshCw, Search } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { type Locale, type MessageKey, t } from '../i18n';
-import { localizePath } from '../i18n/routing';
-import { accountColor } from '../lib/accountColor';
+import { type Locale, type MessageKey, t } from '@/i18n';
+import { localizePath } from '@/i18n/routing';
+import { accountColor } from '@/lib/accountColor';
 import DetailTabs, { useDetailTab } from './ui/DetailTabs';
 import TablePagination from './ui/TablePagination';
 

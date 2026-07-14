@@ -1,8 +1,8 @@
 import type { APIRoute } from 'astro';
-import { isHostname } from '../../../../../../lib/dnsRecordValidation';
-import { pagesDevTarget } from '../../../../../../lib/pagesDevTarget';
-import { appContext, handleCfError, jsonError } from '../../../../../../server/context';
-import { clientForAccount, createPagesDnsRecord, getCachedPagesProject } from '../../../../../../server/workersPages';
+import { isHostname } from '@/lib/dnsRecordValidation';
+import { pagesDevTarget } from '@/lib/pagesDevTarget';
+import { appContext, handleCfError, jsonError } from '@/server/context';
+import { clientForAccount, createPagesDnsRecord, getCachedPagesProject } from '@/server/workersPages';
 
 export const GET: APIRoute = async ({ params, locals, request }) => {
   const { db, key, userEmail } = await appContext(locals);

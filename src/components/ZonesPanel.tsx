@@ -8,10 +8,10 @@ import {
 } from '@tanstack/react-table';
 import { ArrowDown, ArrowUp, ArrowUpDown, Globe, RefreshCw, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { type Locale, t } from '../i18n';
-import { localizePath } from '../i18n/routing';
-import { accountColor } from '../lib/accountColor';
-import { relativeTime } from '../lib/time';
+import { type Locale, t } from '@/i18n';
+import { localizePath } from '@/i18n/routing';
+import { accountColor } from '@/lib/accountColor';
+import { relativeTime } from '@/lib/time';
 import TablePagination from './ui/TablePagination';
 import { ToastProvider, useToast } from './ui/ToastProvider';
 

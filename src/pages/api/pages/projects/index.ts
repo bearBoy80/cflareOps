@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
-import { appContext, jsonError } from '../../../../server/context';
-import { listCachedPagesProjects } from '../../../../server/workersPages';
+import { appContext, jsonError } from '@/server/context';
+import { listCachedPagesProjects } from '@/server/workersPages';
 
 export const GET: APIRoute = async ({ locals, request }) => {
   try {

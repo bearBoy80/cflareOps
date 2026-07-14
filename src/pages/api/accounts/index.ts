@@ -1,8 +1,8 @@
 import type { APIRoute } from 'astro';
-import { CfApiError, CfClient } from '../../../server/cf/client';
-import { appContext, jsonError } from '../../../server/context';
-import { encryptSecret, sha256Hex } from '../../../server/crypto';
-import { insertAccount, listAccounts } from '../../../server/db/accounts';
+import { CfApiError, CfClient } from '@/server/cf/client';
+import { appContext, jsonError } from '@/server/context';
+import { encryptSecret, sha256Hex } from '@/server/crypto';
+import { insertAccount, listAccounts } from '@/server/db/accounts';
 
 export const GET: APIRoute = async ({ locals, request }) => {
   const { db, userEmail } = await appContext(locals);

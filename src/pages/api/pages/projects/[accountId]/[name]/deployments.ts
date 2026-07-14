@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
-import { appContext, handleCfError, jsonError } from '../../../../../../server/context';
-import { clientForAccount, getCachedPagesProject } from '../../../../../../server/workersPages';
+import { appContext, handleCfError, jsonError } from '@/server/context';
+import { clientForAccount, getCachedPagesProject } from '@/server/workersPages';
 
 function intParam(raw: string | null, fallback: number): number {
   const n = Number.parseInt(raw ?? '', 10);

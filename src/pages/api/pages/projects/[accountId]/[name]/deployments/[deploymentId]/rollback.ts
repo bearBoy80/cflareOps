@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
-import { appContext, handleCfError, jsonError } from '../../../../../../../../server/context';
-import { clientForAccount, getCachedPagesProject } from '../../../../../../../../server/workersPages';
+import { appContext, handleCfError, jsonError } from '@/server/context';
+import { clientForAccount, getCachedPagesProject } from '@/server/workersPages';
 
 /** 回滚到指定部署（仅 production 成功部署可回滚；权限同 retry）。 */
 export const POST: APIRoute = async ({ params, locals, request }) => {

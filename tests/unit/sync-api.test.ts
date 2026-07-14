@@ -1,9 +1,9 @@
+import { createTestDb } from '@tests/helpers/d1';
 import { describe, expect, it } from 'vitest';
-import { POST as postWorkers } from '../../src/pages/api/workers/sync';
-import { POST as postZones } from '../../src/pages/api/zones/sync';
-import { encryptSecret, importEncryptionKey } from '../../src/server/crypto';
-import { insertAccount } from '../../src/server/db/accounts';
-import { createTestDb } from '../helpers/d1';
+import { POST as postWorkers } from '@/pages/api/workers/sync';
+import { POST as postZones } from '@/pages/api/zones/sync';
+import { encryptSecret, importEncryptionKey } from '@/server/crypto';
+import { insertAccount } from '@/server/db/accounts';
 
 const HEX_KEY = 'b'.repeat(64);
 const ALICE = 'alice@ops.dev';

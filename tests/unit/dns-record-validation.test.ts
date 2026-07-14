@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isHostname, isIPv4, isIPv6, isRecordName, validateDnsRecord } from '../../src/lib/dnsRecordValidation';
+import { isHostname, isIPv4, isIPv6, isRecordName, validateDnsRecord } from '@/lib/dnsRecordValidation';
 
 describe('isIPv4', () => {
   it.each(['1.2.3.4', '0.0.0.0', '255.255.255.255', '192.168.001.1'])('accepts %s', (ip) => {
