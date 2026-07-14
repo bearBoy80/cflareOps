@@ -5,12 +5,12 @@
 
 ## 目标
 
-在 cloudflareOps 中实现邮件发送能力，长期支撑三个用途：手动发送面板、系统告警通知、定期用量报告。**本期只实现基础层 + 手动发送面板**（含发件人管理、发送记录）；告警和定期报告是后续独立子项目，届时直接复用本期的 `sendEmail()` 服务（定期报告需要额外的 cron 触发器，Cloudflare Pages 不支持 cron，后续单独设计）。
+在 cloudflareOps 中实现邮件发送能力，长期支撑三个用途：手动发送面板、系统告警通知、定期用量报告。**本期只实现基础层 + 手动发送面板**（含发送域名管理、发送记录）；告警和定期报告是后续独立子项目，届时直接复用本期的 `sendEmail()` 服务（定期报告需要额外的 cron 触发器，Cloudflare Pages 不支持 cron，后续单独设计）。
 
 核心决策（已与用户确认）：
 
 - **双 provider 可选**：Resend（官方 `resend` SDK）和 Cloudflare Email Sending（走 CfClient，`cloudflare@6.5.0` 已含 `emailSending.send()`）。统一 `EmailProvider` 接口，便于以后扩展 SMTP 等。
-- **多发件域名可选**：每个「发件身份」（provider + 发件地址 + 凭证）存为一条配置，发送时下拉选择。
+- **按域名配置发送服务**：每个发送域名存一条配置（域名 → 用哪个 provider + 对应凭证），发送时选域名、发件地址的 local 部分自由填写。不按具体发件地址预注册（Resend/CF 验证的是域名而非单个地址，地址级配置是多余的一层）。
 - **内容格式三选一 + 自动降级**：markdown / html / txt 选其一编写；markdown 渲染成 HTML 正文并附纯文本副本（副本 = markdown 原文），html 仅发 HTML，txt 仅发纯文本。
 - **配置存 D1 + 加密，UI 管理**：Resend API key 用现有 AES-GCM 加密存储；Cloudflare 类型直接引用已添加的 `cf_accounts` 账号复用其 token。
 - **发送记录持久化**（含正文原文），方便后期查看。
@@ -18,49 +18,51 @@
 
 ## 数据模型（`migrations/0002_email.sql`）
 
-### `email_senders` 发件身份表
+### `email_domains` 发送域名配置表
 
-| 列 | 类型/约束 | 说明 |
-|---|---|---|
-| `id` | TEXT PRIMARY KEY | `crypto.randomUUID()` |
-| `owner_email` | TEXT NOT NULL | 用户数据隔离，所有查询强制过滤 |
-| `label` | TEXT NOT NULL | 用户起的显示名，如「运维通知」 |
-| `provider` | TEXT NOT NULL CHECK (`provider IN ('resend','cloudflare')`) | |
-| `from_address` | TEXT NOT NULL | 发件地址（多域名 = 多条记录） |
-| `from_name` | TEXT | 发件显示名，可空 |
-| `api_key_ciphertext` | TEXT | 仅 resend：AES-GCM 加密的 API key（`crypto.ts` 现有函数） |
-| `api_key_hash` | TEXT | 仅 resend：SHA-256，用于同一用户内去重与识别展示 |
-| `cf_account_id` | TEXT REFERENCES `cf_accounts(id)` ON DELETE CASCADE | 仅 cloudflare：复用该账号已存的加密 token；删 CF 账号则级联删除发件身份 |
-| `created_at` | TEXT NOT NULL | ISO 时间 |
+**为什么按域名而不是按发件地址建模**：Resend 和 CF Email Sending 的验证单位都是域名——域名通过验证（DNS/DKIM）后，该域名下任意 `xxx@域名` 都可以发。若按具体地址预注册，每换一个 local 部分都要先建配置，是 provider 模型之外多出来的一层限制。按域名配置后，发送时选域名 + 自由填写 local 部分即可。
 
-约束：`provider='resend'` 时 `api_key_ciphertext`/`api_key_hash` 必填；`provider='cloudflare'` 时 `cf_account_id` 必填（应用层校验，SQL 层不加复杂 CHECK）。
+| 列 | 类型/约束 | 说明 | 为什么 |
+|---|---|---|---|
+| `id` | TEXT PRIMARY KEY | `crypto.randomUUID()` | 与 `cf_accounts` 一致的主键风格 |
+| `owner_email` | TEXT NOT NULL | 用户数据隔离 | 项目铁律：所有用户数据查询强制过滤 |
+| `domain` | TEXT NOT NULL，`UNIQUE(owner_email, domain)` | 发送域名，如 `mail.example.com` | 一个域名只能绑定一个 provider，避免同域名两条配置发信行为不确定；唯一约束限定在用户内，不同用户可各自配置同名域名 |
+| `provider` | TEXT NOT NULL CHECK (`IN ('resend','cloudflare')`) | 该域名用哪个服务发 | CHECK 兜底防脏数据；字符串枚举便于以后加 `'smtp'` 等新值（改 CHECK 即可，无需改表结构） |
+| `api_key_ciphertext` | TEXT | 仅 resend：AES-GCM 加密的 API key | 凭证不明文落库（复用 `crypto.ts`，与 `cf_accounts.token` 同一套加密）；每个域名独立存 key 是因为不同域名可能挂在不同 Resend 账号下 |
+| `api_key_hash` | TEXT | 仅 resend：SHA-256 | 密文因 IV 随机不可比对，需要 hash 做去重和 UI 识别展示（只露前几位），永不解密回显 |
+| `cf_account_id` | TEXT REFERENCES `cf_accounts(id)` ON DELETE CASCADE | 仅 cloudflare：域名所属 CF 账号 | 复用该账号已存的加密 token，不重复存凭证（一处轮换处处生效）；CASCADE 与现有缓存表一致——账号删了，其发送配置成为孤儿没有意义 |
+| `created_at` | TEXT NOT NULL | ISO 时间 | 与现有表一致 |
+
+凭证列按 provider 二选一必填（应用层校验，SQL 不加跨列 CHECK——与项目「复杂约束放应用层」的现状一致）。
 
 ### `email_log` 发送记录表
 
-| 列 | 类型/约束 | 说明 |
-|---|---|---|
-| `id` | TEXT PRIMARY KEY | UUID |
-| `owner_email` | TEXT NOT NULL | 隔离 |
-| `sender_id` | TEXT REFERENCES `email_senders(id)` ON DELETE SET NULL | 删发件人不丢历史 |
-| `provider` / `from_address` | TEXT NOT NULL | 冗余快照，sender 删改后记录仍完整 |
-| `recipients_json` | TEXT NOT NULL | `{to: string[], cc: string[], bcc: string[]}` |
-| `subject` | TEXT NOT NULL | |
-| `format` | TEXT NOT NULL | `'markdown' \| 'html' \| 'text'` |
-| `content` | TEXT NOT NULL | **正文原文**（源内容而非渲染结果；回看时用同一 `render.ts` 重新渲染） |
-| `status` | TEXT NOT NULL | `'sent' \| 'failed'` |
-| `message_id` | TEXT | provider 返回的消息 ID，失败为 NULL |
-| `error` | TEXT | 失败原因，成功为 NULL |
-| `created_at` | TEXT NOT NULL | 发送时间，建索引按时间倒序分页 |
+**为什么要有这张表**：用户明确要求发送记录可后期回看；同时告警/定期报告（后续阶段）复用 `sendEmail()` 后，这张表天然成为全部出信的审计流水。
+
+| 列 | 类型/约束 | 说明 | 为什么 |
+|---|---|---|---|
+| `id` | TEXT PRIMARY KEY | UUID | |
+| `owner_email` | TEXT NOT NULL | 隔离 | 同上，铁律 |
+| `domain_id` | TEXT REFERENCES `email_domains(id)` ON DELETE SET NULL | 来源域名配置 | SET NULL 而非 CASCADE：删配置不应抹掉发送历史（审计价值），与缓存表的 CASCADE 语义刻意不同——log 是事实记录不是缓存 |
+| `provider` / `from_address` | TEXT NOT NULL | 冗余快照 | 配置删改后记录仍独立完整可读，不依赖 JOIN 存活 |
+| `recipients_json` | TEXT NOT NULL | `{to, cc, bcc}` | 收件人数量不定，JSON 存单列避免子表（查询场景只有展示，无按收件人检索需求，YAGNI） |
+| `subject` / `format` / `content` | TEXT NOT NULL | 主题、格式、**正文原文** | 存源内容而非渲染后 HTML：体积更小，回看时用同一 `render.ts` 重新渲染，与发送时所见一致 |
+| `status` | TEXT NOT NULL | `'sent' \| 'failed'` | 失败也写记录，排障时能看到「发过但没成」 |
+| `message_id` | TEXT | provider 消息 ID | 到 provider 后台对查投递状态的凭据，失败为 NULL |
+| `error` | TEXT | 失败原因 | 结构化错误信息直接落库，排障不用翻日志 |
+| `created_at` | TEXT NOT NULL，建索引 | 发送时间 | `(owner_email, created_at DESC)` 索引支撑记录页倒序分页 |
 
 ## 服务层（`src/server/email/`）
 
 ```
 src/server/email/
-  types.ts                 EmailFormat, EmailMessage {to, cc, bcc, subject, format, content}, SendResult, EmailSender
+  types.ts                 EmailFormat, EmailMessage {from, fromName, to, cc, bcc, subject, format, content},
+                           SendResult, EmailDomain
   render.ts                renderBody(format, content) → { html?: string, text?: string }
   providers/resend.ts      官方 resend SDK；错误归一化为 {status, messages}（对齐 CfApiError 形状）
   providers/cloudflare.ts  不直接 fetch —— 走 CfClient 新增的 sendEmail() 方法（维持 CfClient 边界约定）
-  index.ts                 sendEmail(ctx, senderId, msg)：查 sender（owner_email 过滤，查不到 NotFoundError）
+  index.ts                 sendEmail(ctx, domainId, msg)：查域名配置（owner_email 过滤，查不到 NotFoundError）
+                           → 校验 msg.from 的域名部分 === 配置的 domain（防止用未配置的域名发信）
                            → 解密凭证 → renderBody → 分发 provider → 成败都写 email_log → 返回 SendResult
 ```
 
@@ -88,11 +90,11 @@ src/server/email/
 
 所有路由开头 `appContext(locals)`；错误走 `ConfigError` / `NotFoundError` / `CfApiError` 现有体系。
 
-- `GET /api/email/senders` — 列表。**永不返回解密后的 key**，resend 只回 `api_key_hash` 前缀做识别（对齐 accounts 现有做法）。
-- `POST /api/email/senders` — 新建：校验 `from_address` 邮箱格式；resend key 加密入库、`api_key_hash` 按用户去重（重复 409）；cloudflare 校验 `cf_account_id` 属当前用户（否则 404）。
-- `PUT /api/email/senders/[id]` — 改 label / from / 凭证（换 key 时重新加密+去重）。
-- `DELETE /api/email/senders/[id]` — 删除。
-- `POST /api/email/send` — `{senderId, to[], cc?, bcc?, subject, format, content}`：服务端校验收件人邮箱格式、subject/content 非空；成败都写 `email_log`；provider 错误透传为结构化 JSON。
+- `GET /api/email/domains` — 列表。**永不返回解密后的 key**，resend 只回 `api_key_hash` 前缀做识别（对齐 accounts 现有做法）。
+- `POST /api/email/domains` — 新建：校验 `domain` 域名格式、同用户内唯一（重复 409）；resend key 加密入库；cloudflare 校验 `cf_account_id` 属当前用户（否则 404）。
+- `PUT /api/email/domains/[id]` — 改 provider / 凭证（换 key 时重新加密）。
+- `DELETE /api/email/domains/[id]` — 删除（log 中的历史经 SET NULL + 快照列保留）。
+- `POST /api/email/send` — `{domainId, from, fromName?, to[], cc?, bcc?, subject, format, content}`：服务端校验 `from` 域名部分与配置一致、收件人邮箱格式、subject/content 非空；成败都写 `email_log`；provider 错误透传为结构化 JSON。
 - `GET /api/email/log?page=&pageSize=` — 分页（owner_email 过滤，`created_at` 倒序），列表不含 `content`。
 - `GET /api/email/log/[id]` — 单条详情（含 `content`）。
 
@@ -100,9 +102,9 @@ src/server/email/
 
 新页面 `src/pages/email.astro` + `src/pages/en/email.astro`，导航加入口。页内用现有 `DetailTabs`（URL `?tab=`，服务端读 searchParams 传 `initialTab` 防 hydration mismatch）分三个 tab：
 
-1. **发送**：sender 下拉（label + from 地址）→ 收件人 to/cc/bcc（逗号分隔多个）→ 主题 → 格式切换（markdown/html/txt）→ 正文 textarea → **编辑/预览切换**。发送成功 toast，保留收件人、清空正文。
-2. **发件人**：senders 表格 + 新建/编辑表单；选 provider 后动态显示（resend → API key 输入框；cloudflare → 已有 CF 账号下拉）。
-3. **记录**：分页表格（时间、发件人、收件人、主题、状态、message_id），行点击看详情：`EmailPreview` 回看正文 + 失败错误信息。
+1. **发送**：域名下拉 → 发件人 local 部分输入框（后缀自动带出 `@域名`）+ 可选显示名 → 收件人 to/cc/bcc（逗号分隔多个）→ 主题 → 格式切换（markdown/html/txt）→ 正文 textarea → **编辑/预览切换**。发送成功 toast，保留收件人、清空正文。
+2. **域名**：已配置域名表格（域名、provider、凭证识别位）+ 新建/编辑表单；选 provider 后动态显示（resend → API key 输入框；cloudflare → 已有 CF 账号下拉）。
+3. **记录**：分页表格（时间、发件地址、收件人、主题、状态、message_id），行点击看详情：`EmailPreview` 回看正文 + 失败错误信息。
 
 ### `EmailPreview` 组件（预览 = 回看，同一组件）
 
@@ -129,8 +131,8 @@ src/server/email/
 ## 测试（Vitest，Node 环境，`createTestDb()` 跑真实迁移）
 
 - `render.test.ts` — 三种格式的渲染输出与降级规则；markdown GFM 基本元素。
-- `email-senders-repo.test.ts` — CRUD、owner_email 隔离（A 看不到/删不掉 B 的 sender）、key 加密往返、hash 去重、`cf_accounts` 级联删除。
-- `email-send-api.test.ts` — mock 两个 provider：参数组装（html/text 降级正确）、成功/失败均写 log、校验失败 400 不写 log、跨用户 senderId 404。
+- `email-domains-repo.test.ts` — CRUD、owner_email 隔离（A 看不到/删不掉 B 的域名）、同用户域名唯一、key 加密往返、`cf_accounts` 级联删除、删域名后 log SET NULL。
+- `email-send-api.test.ts` — mock 两个 provider：参数组装（html/text 降级正确）、from 域名与配置不符 400、成功/失败均写 log、校验失败 400 不写 log、跨用户 domainId 404。
 - `email-log-api.test.ts` — 分页与倒序、列表不含 content、详情含 content、隔离。
 
 workerd 特有行为（SDK fetch 绑定等）测试覆盖不到，实现后用 `npm run preview` 人工验证一次真实发送。
