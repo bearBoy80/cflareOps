@@ -1,6 +1,15 @@
 import { createTestDb } from '@tests/helpers/d1';
 import { describe, expect, it } from 'vitest';
+import { decryptSecret, encryptSecret, importEncryptionKey, sha256Hex } from '@/server/crypto';
 import { deleteAccount, insertAccount } from '@/server/db/accounts';
+import {
+  deleteEmailDomain,
+  getEmailDomain,
+  insertEmailDomain,
+  listEmailDomains,
+  toPublic,
+  updateEmailDomain,
+} from '@/server/db/emailDomains';
 import type { Db } from '@/server/db/types';
 
 const ALICE = 'alice@ops.dev';
@@ -75,5 +84,86 @@ describe('0002_email schema semantics', () => {
     expect(log).not.toBeNull();
     expect(log?.domain_id).toBeNull();
     expect(log?.from_address).toBe('no-reply@mail.example.com');
+  });
+});
+
+describe('emailDomains repo', () => {
+  const HEX_KEY = 'c'.repeat(64);
+
+  function resendInput(id: string, domain: string, ownerEmail = ALICE) {
+    return {
+      id,
+      ownerEmail,
+      domain,
+      provider: 'resend' as const,
+      apiKeyCiphertext: `ct-${id}`,
+      apiKeyHash: `hash-${id}`,
+      accountId: null,
+      cfAccountId: null,
+    };
+  }
+
+  it('insert + get + list roundtrip, scoped by owner_email', async () => {
+    const db = createTestDb();
+    await insertEmailDomain(db, resendInput('d1', 'mail.example.com'));
+    await insertEmailDomain(db, resendInput('d2', 'news.example.com', BOB));
+
+    const aliceRows = await listEmailDomains(db, ALICE);
+    expect(aliceRows.map((r) => r.id)).toEqual(['d1']);
+
+    expect(await getEmailDomain(db, ALICE, 'd1')).toMatchObject({ domain: 'mail.example.com', provider: 'resend' });
+    // 隔离：ALICE 拿不到 BOB 的配置
+    expect(await getEmailDomain(db, ALICE, 'd2')).toBeNull();
+  });
+
+  it('rejects a duplicate domain for the same user with a stable error message', async () => {
+    const db = createTestDb();
+    await insertEmailDomain(db, resendInput('d1', 'mail.example.com'));
+    await expect(insertEmailDomain(db, resendInput('d2', 'mail.example.com'))).rejects.toThrow(
+      'domain already configured',
+    );
+  });
+
+  it('update switches provider and swaps credential columns', async () => {
+    const db = createTestDb();
+    await seedAccount(db, 'a1');
+    await insertEmailDomain(db, resendInput('d1', 'mail.example.com'));
+    await updateEmailDomain(db, ALICE, 'd1', {
+      provider: 'cloudflare',
+      apiKeyCiphertext: null,
+      apiKeyHash: null,
+      accountId: 'a1',
+      cfAccountId: 'cf-tag-1',
+    });
+    const row = await getEmailDomain(db, ALICE, 'd1');
+    expect(row).toMatchObject({ provider: 'cloudflare', account_id: 'a1', cf_account_id: 'cf-tag-1' });
+    expect(row?.api_key_ciphertext).toBeNull();
+  });
+
+  it('delete is owner-scoped: BOB cannot delete ALICE domain', async () => {
+    const db = createTestDb();
+    await insertEmailDomain(db, resendInput('d1', 'mail.example.com'));
+    await deleteEmailDomain(db, BOB, 'd1');
+    expect(await getEmailDomain(db, ALICE, 'd1')).not.toBeNull();
+    await deleteEmailDomain(db, ALICE, 'd1');
+    expect(await getEmailDomain(db, ALICE, 'd1')).toBeNull();
+  });
+
+  it('toPublic exposes only an 8-char hash hint, never ciphertext', async () => {
+    const db = createTestDb();
+    const key = await importEncryptionKey(HEX_KEY);
+    const apiKey = 're_secret_123';
+    await insertEmailDomain(db, {
+      ...resendInput('d1', 'mail.example.com'),
+      apiKeyCiphertext: await encryptSecret(apiKey, key),
+      apiKeyHash: await sha256Hex(apiKey),
+    });
+    const row = (await getEmailDomain(db, ALICE, 'd1'))!;
+    // 加密往返：密文可解回原文（发送时用）
+    expect(await decryptSecret(row.api_key_ciphertext!, key)).toBe(apiKey);
+    const pub = toPublic(row);
+    expect(pub.apiKeyHint).toHaveLength(8);
+    expect(JSON.stringify(pub)).not.toContain(row.api_key_ciphertext);
+    expect(JSON.stringify(pub)).not.toContain(apiKey);
   });
 });
