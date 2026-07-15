@@ -82,8 +82,13 @@ export async function sendEmail(
     await writeLog('sent', messageId, null);
     return { logId, status: 'sent', messageId, error: null };
   } catch (e) {
-    // 失败也写记录（审计完整），再向上重抛给路由映射 HTTP 状态
-    await writeLog('failed', null, e instanceof Error ? e.message : String(e));
+    // 失败也写记录（审计完整），再向上重抛给路由映射 HTTP 状态；
+    // 审计写入自身失败不得掩盖原始 provider 错误
+    try {
+      await writeLog('failed', null, e instanceof Error ? e.message : String(e));
+    } catch (logError) {
+      console.error('email_log write failed after send failure', logError);
+    }
     throw e;
   }
 }

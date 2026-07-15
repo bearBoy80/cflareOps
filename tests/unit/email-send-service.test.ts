@@ -1,5 +1,5 @@
 import { createTestDb } from '@tests/helpers/d1';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CfApiError } from '@/server/cf/client';
 import { NotFoundError } from '@/server/context';
 import { encryptSecret, importEncryptionKey, sha256Hex } from '@/server/crypto';
@@ -54,6 +54,17 @@ function msg(overrides: Partial<EmailMessage> = {}): EmailMessage {
     format: 'markdown',
     content: '# hello',
     ...overrides,
+  };
+}
+
+/** 让 email_log 的 INSERT 抛错，其余 SQL 正常透传：模拟审计写入的瞬时 D1 故障 */
+function withBrokenLogWrites(db: Db): Db {
+  return {
+    ...db,
+    prepare(sql: string) {
+      if (sql.includes('INSERT INTO email_log')) throw new Error('d1 write failed');
+      return db.prepare(sql);
+    },
   };
 }
 
@@ -149,5 +160,23 @@ describe('sendEmail service', () => {
       .first<{ status: string; error: string; message_id: string | null }>();
     expect(log).toMatchObject({ status: 'failed', message_id: null });
     expect(log?.error).toContain('missing Email Sending scope');
+  });
+
+  it('still rethrows the original provider error when the failed-log write itself throws', async () => {
+    const { db, key } = await setup();
+    const boom = new CfApiError(403, ['missing Email Sending scope']);
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const call = sendEmail({ db: withBrokenLogWrites(db), key, userEmail: ALICE }, 'dom-resend', msg(), {
+        resend: async () => {
+          throw boom;
+        },
+      });
+      await expect(call).rejects.toBe(boom);
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+    expect(await countLogs(db)).toBe(0);
   });
 });
