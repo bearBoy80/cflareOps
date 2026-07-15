@@ -27,8 +27,8 @@ export function validateProviderFields(body: DomainBody): Response | null {
 
 export const GET: APIRoute = async ({ locals }) => {
   const { db, userEmail } = await appContext(locals);
-  const rows = await listEmailDomains(db, userEmail);
-  return Response.json({ domains: rows.map(toPublic) });
+  const page = await listEmailDomains(db, userEmail);
+  return Response.json({ domains: page.domains.map(toPublic) });
 };
 
 export const POST: APIRoute = async ({ request, locals }) => {

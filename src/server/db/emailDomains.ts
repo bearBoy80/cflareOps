@@ -72,12 +72,30 @@ export async function insertEmailDomain(db: Db, input: EmailDomainInput): Promis
     .run();
 }
 
-export async function listEmailDomains(db: Db, ownerEmail: string): Promise<EmailDomainRow[]> {
-  const { results } = await db
-    .prepare('SELECT * FROM email_domains WHERE owner_email = ? ORDER BY created_at')
+export interface EmailDomainPage {
+  domains: EmailDomainRow[];
+  total: number;
+}
+
+export async function listEmailDomains(
+  db: Db,
+  ownerEmail: string,
+  opts?: { page?: number; pageSize?: number },
+): Promise<EmailDomainPage> {
+  const page = Math.max(1, opts?.page ?? 1);
+  const pageSize = Math.min(100, Math.max(1, opts?.pageSize ?? 20));
+
+  const countRow = await db
+    .prepare('SELECT COUNT(*) AS cnt FROM email_domains WHERE owner_email = ?')
     .bind(ownerEmail)
+    .first<{ cnt: number }>();
+  const total = countRow?.cnt ?? 0;
+
+  const { results } = await db
+    .prepare('SELECT * FROM email_domains WHERE owner_email = ? ORDER BY created_at LIMIT ? OFFSET ?')
+    .bind(ownerEmail, pageSize, (page - 1) * pageSize)
     .all<EmailDomainRow>();
-  return results;
+  return { domains: results, total };
 }
 
 export async function getEmailDomain(db: Db, ownerEmail: string, id: string): Promise<EmailDomainRow | null> {

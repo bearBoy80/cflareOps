@@ -108,12 +108,33 @@ describe('emailDomains repo', () => {
     await insertEmailDomain(db, resendInput('d1', 'mail.example.com'));
     await insertEmailDomain(db, resendInput('d2', 'news.example.com', BOB));
 
-    const aliceRows = await listEmailDomains(db, ALICE);
-    expect(aliceRows.map((r) => r.id)).toEqual(['d1']);
+    const alicePage = await listEmailDomains(db, ALICE);
+    expect(alicePage.total).toBe(1);
+    expect(alicePage.domains.map((r) => r.id)).toEqual(['d1']);
 
     expect(await getEmailDomain(db, ALICE, 'd1')).toMatchObject({ domain: 'mail.example.com', provider: 'resend' });
     // 隔离：ALICE 拿不到 BOB 的配置
     expect(await getEmailDomain(db, ALICE, 'd2')).toBeNull();
+  });
+
+  it('paginates listEmailDomains and reports total scoped by owner_email', async () => {
+    const db = createTestDb();
+    for (let i = 1; i <= 5; i++) {
+      await insertEmailDomain(db, resendInput(`d${i}`, `d${i}.example.com`));
+    }
+    await insertEmailDomain(db, resendInput('b1', 'bob.example.com', BOB));
+
+    const page1 = await listEmailDomains(db, ALICE, { page: 1, pageSize: 2 });
+    expect(page1.total).toBe(5); // 只算 ALICE，不含 BOB
+    expect(page1.domains).toHaveLength(2);
+    expect(page1.domains.map((r) => r.id)).toEqual(['d1', 'd2']); // ORDER BY created_at
+
+    const page3 = await listEmailDomains(db, ALICE, { page: 3, pageSize: 2 });
+    expect(page3.domains.map((r) => r.id)).toEqual(['d5']);
+
+    // pageSize 超上限被 clamp 到 100（一页取回全部 5 条）
+    const big = await listEmailDomains(db, ALICE, { page: 1, pageSize: 999 });
+    expect(big.domains).toHaveLength(5);
   });
 
   it('rejects a duplicate domain for the same user with a stable error message', async () => {
