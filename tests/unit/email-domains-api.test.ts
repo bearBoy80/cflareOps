@@ -1,5 +1,6 @@
 import { createTestDb } from '@tests/helpers/d1';
 import { describe, expect, it } from 'vitest';
+import { GET as getCfAccounts } from '@/pages/api/accounts/[id]/cf-accounts';
 import { DELETE, PUT } from '@/pages/api/email/domains/[id]';
 import { GET, POST } from '@/pages/api/email/domains/index';
 import { insertAccount } from '@/server/db/accounts';
@@ -111,5 +112,15 @@ describe('email domains API', () => {
     expect(del.status).toBe(404);
     const delOk = await DELETE(ctx(db, { method: 'DELETE', id }));
     expect(delOk.status).toBe(204);
+  });
+});
+
+describe('GET /api/accounts/[id]/cf-accounts', () => {
+  it("returns 404 for another user's account without touching the CF API", async () => {
+    const db = createTestDb();
+    await insertAccount(db, { id: 'a1', ownerEmail: BOB, name: 'bob', tokenEncrypted: 'x', tokenHash: 'h1' });
+    const res = await getCfAccounts(ctx(db, { id: 'a1' }));
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { code: string }).code).toBe('accountNotFound');
   });
 });
