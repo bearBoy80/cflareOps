@@ -11,10 +11,14 @@ const HEX_KEY = 'e'.repeat(64);
 const ALICE = 'alice@ops.dev';
 const BOB = 'bob@ops.dev';
 
-function ctx(db: unknown, opts: { method?: string; body?: unknown; userEmail?: string; id?: string } = {}) {
+function ctx(
+  db: unknown,
+  opts: { method?: string; body?: unknown; userEmail?: string; id?: string; query?: string } = {},
+) {
+  const url = `http://localhost/api/email/domains${opts.query ?? ''}`;
   return {
     locals: { userEmail: opts.userEmail ?? ALICE, runtime: { env: { DB: db, ENCRYPTION_KEY: HEX_KEY } } },
-    request: new Request('http://localhost/api/email/domains', {
+    request: new Request(url, {
       method: opts.method ?? 'GET',
       ...(opts.body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(opts.body) } : {}),
     }),
@@ -112,6 +116,44 @@ describe('email domains API', () => {
     expect(del.status).toBe(404);
     const delOk = await DELETE(ctx(db, { method: 'DELETE', id }));
     expect(delOk.status).toBe(204);
+  });
+
+  describe('GET /api/email/domains pagination', () => {
+    it('returns paging metadata and paginates', async () => {
+      const db = createTestDb();
+      for (let i = 1; i <= 3; i++) await createResendDomain(db, `d${i}.example.com`);
+
+      const res = await GET(ctx(db, { query: '?page=1&pageSize=2' }));
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { domains: unknown[]; total: number; page: number; pageSize: number };
+      expect(body).toMatchObject({ total: 3, page: 1, pageSize: 2 });
+      expect(body.domains).toHaveLength(2);
+    });
+
+    it('clamps invalid page/pageSize to defaults', async () => {
+      const db = createTestDb();
+      await createResendDomain(db, 'only.example.com');
+      const res = await GET(ctx(db, { query: '?page=0&pageSize=-5' }));
+      const body = (await res.json()) as { page: number; pageSize: number; total: number };
+      expect(body).toMatchObject({ page: 1, pageSize: 20, total: 1 });
+    });
+
+    it('pageSize=100 returns the full list for the send dropdown', async () => {
+      const db = createTestDb();
+      for (let i = 1; i <= 5; i++) await createResendDomain(db, `d${i}.example.com`);
+      const res = await GET(ctx(db, { query: '?pageSize=100' }));
+      const body = (await res.json()) as { domains: unknown[]; total: number };
+      expect(body.domains).toHaveLength(5);
+      expect(body.total).toBe(5);
+    });
+
+    it('still never leaks credentials in the list', async () => {
+      const db = createTestDb();
+      await createResendDomain(db, 'secret.example.com');
+      const text = await (await GET(ctx(db, { query: '?page=1&pageSize=20' }))).text();
+      expect(text).toContain('"apiKeyHint"');
+      expect(text).not.toContain('re_key_1');
+    });
   });
 });
 

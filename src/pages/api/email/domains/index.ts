@@ -25,10 +25,15 @@ export function validateProviderFields(body: DomainBody): Response | null {
   return null;
 }
 
-export const GET: APIRoute = async ({ locals }) => {
+export const GET: APIRoute = async ({ locals, request }) => {
   const { db, userEmail } = await appContext(locals);
-  const page = await listEmailDomains(db, userEmail);
-  return Response.json({ domains: page.domains.map(toPublic) });
+  const url = new URL(request.url);
+  const rawPage = parseInt(url.searchParams.get('page') ?? '1', 10);
+  const rawPageSize = parseInt(url.searchParams.get('pageSize') ?? '20', 10);
+  const page = Number.isFinite(rawPage) && rawPage >= 1 ? rawPage : 1;
+  const pageSize = Number.isFinite(rawPageSize) && rawPageSize >= 1 ? Math.min(100, rawPageSize) : 20;
+  const { domains, total } = await listEmailDomains(db, userEmail, { page, pageSize });
+  return Response.json({ domains: domains.map(toPublic), total, page, pageSize });
 };
 
 export const POST: APIRoute = async ({ request, locals }) => {
