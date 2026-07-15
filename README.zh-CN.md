@@ -14,6 +14,7 @@
 - **Workers 管理** —— 聚合查看多账号脚本，查看绑定/配置/版本/部署历史，支持单模块源码查看与编辑，并在 Token 具备写权限时管理 cron、secrets、workers.dev URL 与自定义域。
 - **Pages 管理** —— 浏览 Pages 项目，查看部署/日志/域名，触发部署、重试/回滚部署、清理构建缓存，并可挂载自定义域及按需创建 DNS 记录。
 - **用量分析** —— Workers 与 Pages Functions 调用统计，支持近 24 小时逐时快照、7 天/30 天自然日快照、表格搜索、账号过滤与趋势图。
+- **邮件发送** —— 配置已验证的发送域名，底层可选 [Resend](https://resend.com/)（存储 API Key）或 Cloudflare Email Sending（复用已有账号 Token），即可在后台撰写并发送邮件。正文支持 Markdown / HTML / 纯文本并带实时预览；每次发送（成功或失败）都会写入可审计的记录，随后可查看并按原文重新渲染。
 - **Cloudflare Access 登录认证** —— 使用 Cloudflare Access 保护后台，每个请求校验 `Cf-Access-Jwt-Assertion` JWT，并将认证邮箱作为用户数据隔离边界。
 - **按用户隔离** —— 所有用户数据查询都按登录邮箱过滤，一个 Access 用户无法看到另一个用户的账号与缓存。
 - **稳健同步模型** —— Cloudflare 上游数据缓存到 D1，按账号原子刷新；单个 Token 失效会记录为该账号失败，不阻塞其他账号同步。
@@ -152,6 +153,7 @@
 - **可选 —— Pages 写操作**（部署重试/回滚、域名管理、触发部署、清缓存）：Account → Cloudflare Pages: **Edit**
 - **可选 —— Workers 写操作**（在线编辑部署、cron、secrets、自定义域）：Account → Workers Scripts: **Edit**
 - **可选 —— 用量页**（Workers/Pages Functions 调用数）：Account → Account Analytics: Read
+- **可选 —— 通过 Cloudflare 发信**（仅当配置 Cloudflare 底层的发送域名时需要；Resend 域名用独立的 API Key，无需 Cloudflare 权限）：Account → Email Sending: Edit。且该域名需先在你的 Cloudflare 账号中完成发送验证。
 
 说明：
 
@@ -181,9 +183,9 @@
 
 ```
 src/
-  components/   React island 面板（Accounts、Zones、DNS、Workers、Pages、Usage、Dashboard）
+  components/   React island 面板（Accounts、Zones、DNS、Workers、Pages、Usage、Email、Dashboard）
   pages/        Astro 路由 + API 端点（src/pages/api）
-  server/       服务端服务（usage、sync 等）
+  server/       服务端服务（usage、sync、email 等）
   lib/          共享工具（Cloudflare 客户端、加密 ...）
   i18n/         中英文案
   middleware.ts Access 认证

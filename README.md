@@ -14,6 +14,7 @@ Built with Astro 5 + React + DaisyUI, deployed on Cloudflare Pages + D1. The UI 
 - **Workers management** — list scripts across accounts, inspect bindings/settings/history/deployments, view and edit single-module source, manage cron triggers, secrets, workers.dev URLs, and custom domains when the token has edit scope.
 - **Pages management** — browse Pages projects, inspect deployments/logs/domains, trigger deployments, retry/rollback deployments, purge build cache, and attach custom domains with optional DNS record creation.
 - **Usage analytics** — view Workers and Pages Functions invocation counts with 24h hourly snapshots, 7d/30d daily snapshots, searchable tables, account filters, and trend charts.
+- **Email sending** — configure verified sending domains backed by either [Resend](https://resend.com/) (stored API key) or Cloudflare Email Sending (reuses an existing account token), then compose and send mail from the dashboard. Bodies support Markdown / HTML / plain text with a live preview, and every send is written to an auditable log (success or failure) you can review and re-render later.
 - **Cloudflare Access login** — protect the dashboard with Cloudflare Access, verify the `Cf-Access-Jwt-Assertion` JWT on every request, and use the authenticated email as the per-user data boundary.
 - **Per-user data isolation** — every user-owned query is scoped by authenticated email, so one Access user cannot see another user's accounts or caches.
 - **Resilient sync model** — upstream Cloudflare data is cached in D1 using atomic per-account refreshes; one bad token is reported as an account failure without blocking other accounts.
@@ -152,6 +153,7 @@ Create an API Token for each Cloudflare account you want to manage. Minimum scop
 - **Optional — Pages write** (retry/rollback deployments, domain management, trigger deploys, purge cache): Account → Cloudflare Pages: **Edit**
 - **Optional — Workers write** (in-browser edit/deploy, cron, secrets, custom domains): Account → Workers Scripts: **Edit**
 - **Optional — Usage page** (Workers/Pages Functions invocation counts): Account → Account Analytics: Read
+- **Optional — Email sending via Cloudflare** (only if you configure a Cloudflare-backed sending domain; Resend domains use a separate API key and need no Cloudflare scope): Account → Email Sending: Edit. The domain must also be verified for sending in your Cloudflare account first.
 
 Notes:
 
@@ -181,9 +183,9 @@ Commands are shown with `npm run` because they are package scripts; `pnpm run <s
 
 ```
 src/
-  components/   React island panels (Accounts, Zones, DNS, Workers, Pages, Usage, Dashboard)
+  components/   React island panels (Accounts, Zones, DNS, Workers, Pages, Usage, Email, Dashboard)
   pages/        Astro routes + API endpoints (src/pages/api)
-  server/       Server-side services (usage, sync, etc.)
+  server/       Server-side services (usage, sync, email, etc.)
   lib/          Shared utilities (Cloudflare client, crypto, ...)
   i18n/         Bilingual strings
   middleware.ts Access authentication
