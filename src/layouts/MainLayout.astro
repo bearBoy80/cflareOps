@@ -1,6 +1,6 @@
 ---
 import '@/styles/global.css';
-import { BarChart3, Check, ChevronDown, Database, Globe, Languages, LayoutDashboard, LogOut, Menu, PanelLeft, UserRound, Users, Workflow } from 'lucide-react';
+import { BarChart3, Check, ChevronDown, Database, Globe, Languages, LayoutDashboard, LogOut, Mail, Menu, PanelLeft, UserRound, Users, Workflow } from 'lucide-react';
 import { LOCALES, t, type Locale } from '@/i18n';
 import { localizePath } from '@/i18n/routing';
 import { shouldBypassAuth } from '@/server/auth';
@@ -15,6 +15,7 @@ const nav = [
   { href: localizePath(locale, '/zones'), label: t(locale, 'nav.zones'), Icon: Globe },
   { href: localizePath(locale, '/workers'), label: t(locale, 'nav.workersPages'), Icon: Workflow },
   { href: localizePath(locale, '/usage'), label: t(locale, 'nav.usage'), Icon: BarChart3 },
+  { href: localizePath(locale, '/email'), label: t(locale, 'nav.email'), Icon: Mail },
 ];
 const upcoming = [
   { label: t(locale, 'nav.storage'), Icon: Database },
