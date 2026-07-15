@@ -1,4 +1,4 @@
-import { Eye, Mail, Pencil, Plus, Send, SquarePen, Trash2 } from 'lucide-react';
+import { Mail, Pencil, Plus, Send, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { type Locale, type MessageKey, t } from '@/i18n';
 import { relativeTime } from '@/lib/time';
@@ -103,7 +103,6 @@ function SendTab({ locale, domains }: { locale: Locale; domains: DomainItem[] })
   const [subject, setSubject] = useState('');
   const [format, setFormat] = useState<EmailFormat>('markdown');
   const [content, setContent] = useState('');
-  const [previewing, setPreviewing] = useState(false);
   const [sending, setSending] = useState(false);
   const { showToast } = useToast();
   const apiErrorText = useApiErrorText(locale);
@@ -135,7 +134,6 @@ function SendTab({ locale, domains }: { locale: Locale; domains: DomainItem[] })
         showToast(t(locale, 'email.sent'), 'success');
         // 保留收件人与主题便于连发，清空正文
         setContent('');
-        setPreviewing(false);
       } else {
         const data = (await res.json().catch(() => null)) as { error?: string; code?: string } | null;
         showToast(apiErrorText(data), 'error');
@@ -234,37 +232,20 @@ function SendTab({ locale, domains }: { locale: Locale; domains: DomainItem[] })
               </button>
             ))}
           </div>
-          <div className="join">
-            <button
-              type="button"
-              className={`btn join-item btn-xs whitespace-nowrap${previewing ? '' : ' btn-active'}`}
-              onClick={() => setPreviewing(false)}
-            >
-              <SquarePen size={14} strokeWidth={1.75} />
-              {t(locale, 'email.editMode')}
-            </button>
-            <button
-              type="button"
-              className={`btn join-item btn-xs whitespace-nowrap${previewing ? ' btn-active' : ''}`}
-              onClick={() => setPreviewing(true)}
-            >
-              <Eye size={14} strokeWidth={1.75} />
-              {t(locale, 'email.previewMode')}
-            </button>
-          </div>
         </div>
-        <div className="mt-2">
-          {previewing ? (
-            <EmailPreview format={format} content={content} />
-          ) : (
-            <textarea
-              className="textarea textarea-bordered h-96 w-full font-mono text-sm"
-              placeholder={t(locale, 'email.contentPlaceholder')}
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              required
-            />
-          )}
+        <div className="mt-2 flex flex-col gap-1">
+          <span className="label-text text-xs opacity-60">{t(locale, 'email.editMode')}</span>
+          <textarea
+            className="textarea textarea-bordered h-72 w-full font-mono text-sm"
+            placeholder={t(locale, 'email.contentPlaceholder')}
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            required
+          />
+        </div>
+        <div className="mt-2 flex flex-col gap-1">
+          <span className="label-text text-xs opacity-60">{t(locale, 'email.previewMode')}</span>
+          <EmailPreview format={format} content={content} />
         </div>
         <div className="mt-3">
           <button className="btn btn-primary btn-sm whitespace-nowrap" disabled={sending} type="submit">
