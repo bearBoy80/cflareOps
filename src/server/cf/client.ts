@@ -797,6 +797,38 @@ export class CfClient {
     });
   }
 
+  /**
+   * Email Sending 发信（POST /accounts/:id/email/sending/send，SDK emailSending.send）。
+   * cc/bcc/html/text 仅在有值时带上（端点要求 html/text 至少一个非空，由服务层 renderBody 保证）。
+   * token 缺 Email Sending 权限 → CfApiError 403，由路由映射为仅该动作 403，不影响只读视图。
+   */
+  sendEmail(
+    cfAccountId: string,
+    params: {
+      from: string | { address: string; name: string };
+      to: string[];
+      cc?: string[];
+      bcc?: string[];
+      subject: string;
+      html?: string;
+      text?: string;
+    },
+  ): Promise<{ messageId: string }> {
+    return this.wrap(async () => {
+      const r = await this.sdk.emailSending.send({
+        account_id: cfAccountId,
+        from: params.from,
+        to: params.to,
+        subject: params.subject,
+        ...(params.cc?.length ? { cc: params.cc } : {}),
+        ...(params.bcc?.length ? { bcc: params.bcc } : {}),
+        ...(params.html ? { html: params.html } : {}),
+        ...(params.text ? { text: params.text } : {}),
+      });
+      return { messageId: r.message_id };
+    });
+  }
+
   /** 账号级 Workers 调用统计（GraphQL workersInvocationsAdaptive，按脚本聚合；T0 探针实证形状） */
   queryWorkersInvocations(
     cfAccountId: string,

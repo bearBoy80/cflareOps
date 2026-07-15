@@ -1379,4 +1379,48 @@ describe('CfClient (official SDK adapter)', () => {
       client.queryWorkersInvocations('acc1', '2026-06-30T00:00:00Z', '2026-07-07T00:00:00Z'),
     ).rejects.toThrow(/not authorized/);
   });
+
+  it('sendEmail posts to /email/sending/send and returns message_id', async () => {
+    let seenUrl = '';
+    let seenBody: Record<string, unknown> = {};
+    const fetchImpl: typeof fetch = async (input, init) => {
+      seenUrl = String(input);
+      seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return jsonResponse({
+        success: true,
+        errors: [],
+        messages: [],
+        result: { message_id: 'mid-1', delivered: ['to@x.co'], permanent_bounces: [], queued: [] },
+      });
+    };
+    const r = await new CfClient('tok', fetchImpl).sendEmail('cf-acct-1', {
+      from: { address: 'no-reply@mail.example.com', name: 'Ops' },
+      to: ['to@x.co'],
+      subject: 'Hello',
+      html: '<p>hi</p>',
+      text: 'hi',
+    });
+    expect(r.messageId).toBe('mid-1');
+    expect(seenUrl).toContain('/accounts/cf-acct-1/email/sending/send');
+    expect(seenBody.subject).toBe('Hello');
+    expect(seenBody.html).toBe('<p>hi</p>');
+    expect(seenBody.text).toBe('hi');
+    expect(seenBody.from).toEqual({ address: 'no-reply@mail.example.com', name: 'Ops' });
+    expect('cc' in seenBody).toBe(false);
+  });
+
+  it('sendEmail maps a 403 (missing Email Sending scope) to CfApiError', async () => {
+    const fetchImpl: typeof fetch = async () =>
+      jsonResponse(
+        { success: false, errors: [{ code: 10000, message: 'Authentication error' }], messages: [], result: null },
+        403,
+      );
+    const client = new CfClient('tok', fetchImpl);
+    await expect(client.sendEmail('cf-1', { from: 'a@b.co', to: ['c@d.co'], subject: 's', text: 'x' })).rejects.toThrow(
+      CfApiError,
+    );
+    await expect(
+      client.sendEmail('cf-1', { from: 'a@b.co', to: ['c@d.co'], subject: 's', text: 'x' }),
+    ).rejects.toMatchObject({ status: 403 });
+  });
 });
