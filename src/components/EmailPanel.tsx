@@ -6,6 +6,7 @@ import type { EmailFormat } from '@/server/email/types';
 import { ConfirmDialogProvider, useConfirm } from './ui/ConfirmDialog';
 import DetailTabs, { useDetailTab } from './ui/DetailTabs';
 import EmailPreview from './ui/EmailPreview';
+import SearchableCombobox from './ui/SearchableCombobox';
 import TablePagination from './ui/TablePagination';
 import { ToastProvider, useToast } from './ui/ToastProvider';
 
@@ -68,6 +69,15 @@ function splitEmails(input: string): string[] {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+/** 域名 combobox 的候选源：当前用户已同步的 Cloudflare zones 名（去重）。zones 未同步则空。 */
+async function fetchZoneNames(query: string): Promise<string[]> {
+  const params = new URLSearchParams({ search: query, pageSize: '20' });
+  const res = await fetch(`/api/zones?${params.toString()}`);
+  if (!res.ok) return [];
+  const data = (await res.json()) as { zones: { name: string }[] };
+  return [...new Set(data.zones.map((z) => z.name))];
 }
 
 function useApiErrorText(locale: Locale) {
@@ -314,14 +324,23 @@ function DomainFields({
 
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-start">
-      <input
-        className="input input-bordered input-sm w-full sm:w-56"
-        placeholder={t(locale, 'email.domainPlaceholder')}
-        value={value.domain}
-        onChange={(e) => onChange({ ...value, domain: e.target.value })}
-        disabled={editing}
-        required={!editing}
-      />
+      {editing ? (
+        <input
+          className="input input-bordered input-sm w-full sm:w-56"
+          placeholder={t(locale, 'email.domainPlaceholder')}
+          value={value.domain}
+          disabled
+        />
+      ) : (
+        <SearchableCombobox
+          className="w-full sm:w-56"
+          value={value.domain}
+          onChange={(domain) => onChange({ ...value, domain })}
+          fetchOptions={fetchZoneNames}
+          placeholder={t(locale, 'email.domainSearchPlaceholder')}
+          noMatchLabel={t(locale, 'email.domainNoMatch')}
+        />
+      )}
       <select
         className="select select-bordered select-sm w-full sm:w-40"
         value={value.provider}
@@ -378,15 +397,13 @@ function DomainFields({
 
 const EMPTY_FORM: DomainFormValue = { domain: '', provider: 'resend', apiKey: '', accountId: '', cfAccountId: '' };
 
-function DomainsTab({
-  locale,
-  domains,
-  onChanged,
-}: {
-  locale: Locale;
-  domains: DomainItem[];
-  onChanged: () => Promise<void>;
-}) {
+function DomainsTab({ locale, onChanged }: { locale: Locale; onChanged: () => Promise<void> }) {
+  const [domains, setDomains] = useState<DomainItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [form, setForm] = useState<DomainFormValue>(EMPTY_FORM);
   const [accounts, setAccounts] = useState<AccountItem[]>([]);
   const [busy, setBusy] = useState(false);
@@ -396,6 +413,35 @@ function DomainsTab({
   const { showToast } = useToast();
   const confirm = useConfirm();
   const apiErrorText = useApiErrorText(locale);
+
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+
+  const reload = useCallback(async () => {
+    try {
+      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+      const res = await fetch(`/api/email/domains?${params.toString()}`);
+      if (!res.ok) {
+        setLoadError(true);
+        return;
+      }
+      setLoadError(false);
+      const data = (await res.json()) as { domains: DomainItem[]; total: number };
+      if (data.domains.length === 0 && data.total > 0 && page > 1) {
+        setPage(1);
+        return;
+      }
+      setDomains(data.domains);
+      setTotal(data.total);
+    } catch {
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [page, pageSize]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
 
   useEffect(() => {
     void fetch('/api/accounts?pageSize=100')
@@ -422,6 +468,7 @@ function DomainsTab({
       if (res.ok) {
         setForm(EMPTY_FORM);
         showToast(t(locale, 'email.domainAdded'), 'success');
+        await reload();
         await onChanged();
       } else {
         const data = (await res.json().catch(() => null)) as { error?: string; code?: string } | null;
@@ -458,6 +505,7 @@ function DomainsTab({
       if (res.ok) {
         setEditing(null);
         showToast(t(locale, 'email.domainUpdated'), 'success');
+        await reload();
         await onChanged();
       } else {
         const data = (await res.json().catch(() => null)) as { error?: string; code?: string } | null;
@@ -481,6 +529,7 @@ function DomainsTab({
       const res = await fetch(`/api/email/domains/${d.id}`, { method: 'DELETE' });
       if (res.ok) {
         showToast(t(locale, 'email.domainDeleted'), 'success');
+        await reload();
         await onChanged();
       } else {
         const data = (await res.json().catch(() => null)) as { error?: string; code?: string } | null;
@@ -508,52 +557,87 @@ function DomainsTab({
 
       <div className="card border border-base-300 bg-base-100 p-4">
         <h2 className="mb-3 font-semibold">{t(locale, 'email.domainsTitle')}</h2>
-        {domains.length === 0 ? (
-          <p className="py-8 text-center text-sm opacity-60">{t(locale, 'email.emptyDomains')}</p>
-        ) : (
+        {loading ? (
           <div className="overflow-x-auto">
             <table className="table table-sm">
-              <thead>
-                <tr>
-                  <th>{t(locale, 'email.colDomain')}</th>
-                  <th>{t(locale, 'email.colProvider')}</th>
-                  <th className="hidden sm:table-cell">{t(locale, 'email.colCredential')}</th>
-                  <th className="hidden md:table-cell">{t(locale, 'email.colCreated')}</th>
-                  <th>{t(locale, 'email.colActions')}</th>
-                </tr>
-              </thead>
               <tbody>
-                {domains.map((d) => (
-                  <tr key={d.id}>
-                    <td className="font-mono">{d.domain}</td>
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <tr key={i}>
                     <td>
-                      <span className="badge badge-ghost badge-sm shrink-0 whitespace-nowrap">{d.provider}</span>
-                    </td>
-                    <td className="hidden font-mono text-xs opacity-60 sm:table-cell">
-                      {d.provider === 'resend' ? `sha256:${d.apiKeyHint ?? '—'}` : (d.cfAccountId ?? '—')}
-                    </td>
-                    <td className="hidden font-mono text-xs md:table-cell" title={d.createdAt}>
-                      {relativeTime(d.createdAt, locale) || '—'}
-                    </td>
-                    <td className="space-x-2 whitespace-nowrap">
-                      <button className="btn btn-xs whitespace-nowrap" onClick={() => openEdit(d)} type="button">
-                        <Pencil size={14} strokeWidth={1.75} />
-                        {t(locale, 'email.edit')}
-                      </button>
-                      <button
-                        className="btn btn-error btn-xs whitespace-nowrap"
-                        onClick={() => void removeDomain(d)}
-                        type="button"
-                      >
-                        <Trash2 size={14} strokeWidth={1.75} />
-                        {t(locale, 'email.delete')}
-                      </button>
+                      <div className="skeleton h-8" />
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+        ) : loadError ? (
+          <div className="alert alert-error flex items-center gap-3">
+            <span className="text-sm">{t(locale, 'common.requestFailed')}</span>
+            <button className="btn btn-sm btn-ghost" onClick={() => void reload()}>
+              {t(locale, 'common.retry')}
+            </button>
+          </div>
+        ) : total === 0 ? (
+          <p className="py-8 text-center text-sm opacity-60">{t(locale, 'email.emptyDomains')}</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="table table-sm">
+                <thead>
+                  <tr>
+                    <th>{t(locale, 'email.colDomain')}</th>
+                    <th>{t(locale, 'email.colProvider')}</th>
+                    <th className="hidden sm:table-cell">{t(locale, 'email.colCredential')}</th>
+                    <th className="hidden md:table-cell">{t(locale, 'email.colCreated')}</th>
+                    <th>{t(locale, 'email.colActions')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {domains.map((d) => (
+                    <tr key={d.id}>
+                      <td className="font-mono">{d.domain}</td>
+                      <td>
+                        <span className="badge badge-ghost badge-sm shrink-0 whitespace-nowrap">{d.provider}</span>
+                      </td>
+                      <td className="hidden font-mono text-xs opacity-60 sm:table-cell">
+                        {d.provider === 'resend' ? `sha256:${d.apiKeyHint ?? '—'}` : (d.cfAccountId ?? '—')}
+                      </td>
+                      <td className="hidden font-mono text-xs md:table-cell" title={d.createdAt}>
+                        {relativeTime(d.createdAt, locale) || '—'}
+                      </td>
+                      <td className="space-x-2 whitespace-nowrap">
+                        <button className="btn btn-xs whitespace-nowrap" onClick={() => openEdit(d)} type="button">
+                          <Pencil size={14} strokeWidth={1.75} />
+                          {t(locale, 'email.edit')}
+                        </button>
+                        <button
+                          className="btn btn-error btn-xs whitespace-nowrap"
+                          onClick={() => void removeDomain(d)}
+                          type="button"
+                        >
+                          <Trash2 size={14} strokeWidth={1.75} />
+                          {t(locale, 'email.delete')}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <TablePagination
+              locale={locale}
+              total={total}
+              page={page}
+              pageCount={pageCount}
+              pageSize={pageSize}
+              onPageChange={setPage}
+              onPageSizeChange={(n) => {
+                setPage(1);
+                setPageSize(n);
+              }}
+            />
+          </>
         )}
       </div>
 
@@ -746,7 +830,7 @@ function EmailPanelInner({ locale, initialTab }: { locale: Locale; initialTab?: 
 
   const reloadDomains = useCallback(async () => {
     try {
-      const res = await fetch('/api/email/domains');
+      const res = await fetch('/api/email/domains?pageSize=100');
       if (!res.ok) return;
       const data = (await res.json()) as { domains: DomainItem[] };
       setDomains(data.domains);
@@ -770,7 +854,7 @@ function EmailPanelInner({ locale, initialTab }: { locale: Locale; initialTab?: 
       <h1 className="min-w-0 flex-1 truncate font-semibold text-xl">{t(locale, 'email.pageTitle')}</h1>
       <DetailTabs tabs={tabs} active={active} onChange={(key) => switchTab(key as TabKey)} />
       {active === 'send' && <SendTab locale={locale} domains={domains} />}
-      {active === 'domains' && <DomainsTab locale={locale} domains={domains} onChanged={reloadDomains} />}
+      {active === 'domains' && <DomainsTab locale={locale} onChanged={reloadDomains} />}
       {active === 'log' && <LogTab locale={locale} />}
     </div>
   );
