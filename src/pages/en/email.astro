@@ -1,0 +1,12 @@
+---
+import EmailPanel from '@/components/EmailPanel';
+import { t } from '@/i18n';
+import { localeFromPath } from '@/i18n/routing';
+import MainLayout from '@/layouts/MainLayout.astro';
+const locale = localeFromPath(Astro.url.pathname);
+// 服务端读 ?tab= 传入 initialTab：SSR 与首次 hydration 一致，防 mismatch
+const initialTab = Astro.url.searchParams.get('tab');
+---
+<MainLayout title={t(locale, 'email.pageTitle')} locale={locale}>
+  <EmailPanel client:load locale={locale} initialTab={initialTab} />
+</MainLayout>
