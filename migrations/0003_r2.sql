@@ -16,3 +16,5 @@ CREATE TABLE IF NOT EXISTS r2_buckets (
   synced_at       TEXT NOT NULL,
   PRIMARY KEY (account_id, cf_account_id, name)
 );
+
+CREATE INDEX IF NOT EXISTS idx_r2_buckets_account ON r2_buckets(account_id);
