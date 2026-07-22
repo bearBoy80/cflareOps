@@ -1,4 +1,5 @@
 import Cloudflare from 'cloudflare';
+import pLimit from 'p-limit';
 import type {
   CfAccount,
   CfDnsRecord,
@@ -1163,6 +1164,43 @@ export class CfClient {
       // 路由层已校验空 key；这里是纵深防御——空 key 会把 DELETE 打到桶路径上
       if (!key) throw new CfApiError(400, ['object key is required']);
       await this.sdk.r2.buckets.objects.delete(bucket, encodeR2ObjectKey(key), { account_id: cfAccountId });
+    });
+  }
+
+  /**
+   * 递归删除前缀下的全部对象。不带 delimiter 的列举天然展开所有嵌套层级
+   * （含零字节目录占位对象），每轮删完后重新从头列举（删除会使游标视图失效）。
+   * workerd 有子请求上限：单次调用最多删 maxDeletes 个，未删完返回 done=false 由调用方续跑。
+   */
+  deleteR2Prefix(
+    cfAccountId: string,
+    bucket: string,
+    prefix: string,
+    maxDeletes: number,
+  ): Promise<{ deleted: number; done: boolean }> {
+    return this.wrap(async () => {
+      if (!prefix) throw new CfApiError(400, ['prefix is required']);
+      const limit = pLimit(5);
+      let deleted = 0;
+      while (deleted < maxDeletes) {
+        const page = await this.sdk.r2.buckets.objects.list(bucket, {
+          account_id: cfAccountId,
+          prefix,
+          per_page: Math.min(100, maxDeletes - deleted),
+        });
+        const keys = page
+          .getPaginatedItems()
+          .map((o) => o.key ?? '')
+          .filter(Boolean);
+        if (keys.length === 0) return { deleted, done: true };
+        await Promise.all(
+          keys.map((k) =>
+            limit(() => this.sdk.r2.buckets.objects.delete(bucket, encodeR2ObjectKey(k), { account_id: cfAccountId })),
+          ),
+        );
+        deleted += keys.length;
+      }
+      return { deleted, done: false };
     });
   }
 

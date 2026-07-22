@@ -139,6 +139,39 @@ export default function ObjectsTab({
     }
   }
 
+  /** 目录递归删除：服务端每次限量（workerd 子请求上限），按 done=false 续跑直到删完 */
+  async function removeFolder(obj: R2Object) {
+    if (deletingKey) return;
+    const ok = await confirm({
+      title: t(locale, 'r2.confirmDeleteFolder', { key: obj.key }),
+      confirmLabel: t(locale, 'common.confirm'),
+      cancelLabel: t(locale, 'common.cancel'),
+    });
+    if (!ok) return;
+    setDeletingKey(obj.key);
+    try {
+      let total = 0;
+      for (;;) {
+        const res = await fetch(withCf(`${apiBase}/objects?prefix=${encodeURIComponent(obj.key)}`, cfAccountId), {
+          method: 'DELETE',
+        });
+        if (!res.ok) {
+          showToast(res.status === 403 ? t(locale, 'r2.forbiddenHint') : t(locale, 'common.requestFailed'), 'error');
+          return;
+        }
+        const { deleted, done } = (await res.json()) as { deleted: number; done: boolean };
+        total += deleted;
+        if (done) break;
+      }
+      showToast(t(locale, 'r2.folderDeleted', { n: total }), 'success');
+      void load(prefix, null, false);
+    } catch {
+      showToast(t(locale, 'common.requestFailed'), 'error');
+    } finally {
+      setDeletingKey(null);
+    }
+  }
+
   async function upload(file: globalThis.File) {
     const key = prefix + file.name;
     // 立即置 0 禁用按钮：presign 往返期间的窗口内不允许再次触发上传
@@ -270,7 +303,17 @@ export default function ObjectsTab({
                     </td>
                     <td className="hidden sm:table-cell">—</td>
                     <td>—</td>
-                    <td />
+                    <td>
+                      <button
+                        className="btn btn-ghost btn-xs whitespace-nowrap text-error"
+                        disabled={deletingKey !== null}
+                        onClick={() => void removeFolder(obj)}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                      >
+                        {deletingKey === obj.key && <span className="loading loading-spinner loading-xs" />}
+                        {t(locale, 'r2.deleteObject')}
+                      </button>
+                    </td>
                   </tr>
                 ) : (
                   <tr key={obj.key}>

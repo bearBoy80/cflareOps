@@ -1,7 +1,7 @@
 import { createTestDb } from '@tests/helpers/d1';
 import { describe, expect, it } from 'vitest';
 import { GET as contentGet } from '@/pages/api/r2/[accountId]/[bucket]/content';
-import { GET as objectsGet } from '@/pages/api/r2/[accountId]/[bucket]/objects';
+import { DELETE as objectsDelete, GET as objectsGet } from '@/pages/api/r2/[accountId]/[bucket]/objects';
 import { POST as presignPost } from '@/pages/api/r2/[accountId]/[bucket]/presign';
 import { GET as bucketsGet, POST as bucketsPost } from '@/pages/api/r2/buckets';
 import { encryptSecret, importEncryptionKey } from '@/server/crypto';
@@ -78,6 +78,15 @@ describe('bucket ownership guard', () => {
       ),
     );
     expect(preRes.status).toBe(404);
+  });
+
+  it('400s objects DELETE when neither key nor prefix is given', async () => {
+    const db = createTestDb();
+    await seed(db);
+    const res = await objectsDelete(
+      ctx(db, 'http://localhost/api/r2/a1/b1/objects', { method: 'DELETE' }, { accountId: 'a1', bucket: 'b1' }),
+    );
+    expect(res.status).toBe(400);
   });
 
   it('400s presign on an invalid op or empty key', async () => {

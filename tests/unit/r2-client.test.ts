@@ -147,6 +147,49 @@ describe('CfClient R2 objects', () => {
     await expect(new CfClient('tok', fetchImpl).deleteR2Object('cf-1', 'b1', '')).rejects.toBeInstanceOf(CfApiError);
   });
 
+  it('deleteR2Prefix lists without delimiter and deletes every nested key until empty', async () => {
+    const deletes: string[] = [];
+    let listCount = 0;
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = String(input);
+      const method = (init?.method ?? 'get').toLowerCase();
+      if (method === 'get') {
+        listCount++;
+        expect(url).toContain('prefix=docs%2F');
+        expect(url).not.toContain('delimiter');
+        // 第一轮返回全部嵌套层级（含目录占位对象），删完后第二轮列举为空 → done
+        return jsonResponse(
+          envelope(
+            listCount === 1 ? [{ key: 'docs/a.txt' }, { key: 'docs/sub/deep/b.txt' }, { key: 'docs/sub/' }] : [],
+          ),
+        );
+      }
+      deletes.push(url);
+      return jsonResponse(envelope({}));
+    };
+    const r = await new CfClient('tok', fetchImpl).deleteR2Prefix('cf-1', 'b1', 'docs/', 40);
+    expect(r).toEqual({ deleted: 3, done: true });
+    expect(deletes.some((u) => u.includes('/objects/docs/sub/deep/b.txt'))).toBe(true);
+    expect(deletes.some((u) => u.includes('/objects/docs/sub/'))).toBe(true);
+  });
+
+  it('deleteR2Prefix stops at maxDeletes and reports done=false for the caller to continue', async () => {
+    let deletes = 0;
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const method = (init?.method ?? 'get').toLowerCase();
+      if (method === 'get') {
+        const perPage = new URL(String(input)).searchParams.get('per_page');
+        expect(perPage).toBe('2'); // min(100, maxDeletes - deleted)
+        return jsonResponse(envelope([{ key: 'p/x' }, { key: 'p/y' }]));
+      }
+      deletes++;
+      return jsonResponse(envelope({}));
+    };
+    const r = await new CfClient('tok', fetchImpl).deleteR2Prefix('cf-1', 'b1', 'p/', 2);
+    expect(r).toEqual({ deleted: 2, done: false });
+    expect(deletes).toBe(2);
+  });
+
   it('getR2ObjectContent GETs the encoded object path and returns contentType + text', async () => {
     let seenUrl = '';
     const fetchImpl: typeof fetch = async (input) => {
