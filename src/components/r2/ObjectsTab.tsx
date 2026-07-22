@@ -35,6 +35,8 @@ export default function ObjectsTab({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [preview, setPreview] = useState<{ key: string; size: number | null } | null>(null);
+  /** 正在删除的对象 key，网络往返期间行内按钮转 spinner */
+  const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const { showToast } = useToast();
   const confirm = useConfirm();
@@ -104,12 +106,14 @@ export default function ObjectsTab({
   }
 
   async function removeObject(obj: R2Object) {
+    if (deletingKey) return;
     const ok = await confirm({
       title: t(locale, 'r2.confirmDeleteObject', { key: obj.key }),
       confirmLabel: t(locale, 'common.confirm'),
       cancelLabel: t(locale, 'common.cancel'),
     });
     if (!ok) return;
+    setDeletingKey(obj.key);
     try {
       const res = await fetch(withCf(`${apiBase}/objects?key=${encodeURIComponent(obj.key)}`, cfAccountId), {
         method: 'DELETE',
@@ -122,6 +126,8 @@ export default function ObjectsTab({
       void load(prefix, null, false);
     } catch {
       showToast(t(locale, 'common.requestFailed'), 'error');
+    } finally {
+      setDeletingKey(null);
     }
   }
 
@@ -293,8 +299,10 @@ export default function ObjectsTab({
                         </button>
                         <button
                           className="btn btn-ghost btn-xs whitespace-nowrap text-error"
+                          disabled={deletingKey !== null}
                           onClick={() => void removeObject(obj)}
                         >
+                          {deletingKey === obj.key && <span className="loading loading-spinner loading-xs" />}
                           {t(locale, 'r2.deleteObject')}
                         </button>
                       </span>

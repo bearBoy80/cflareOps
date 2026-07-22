@@ -64,6 +64,8 @@ function R2PanelInner({ locale }: { locale: Locale }) {
   const [createLocation, setCreateLocation] = useState('');
   const [createClass, setCreateClass] = useState('Standard');
   const [creating, setCreating] = useState(false);
+  /** 正在删除的桶（cfAccountId/name 唯一定位行），网络往返期间行内按钮转 spinner */
+  const [deletingBucket, setDeletingBucket] = useState<string | null>(null);
   const { showToast } = useToast();
   const confirm = useConfirm();
 
@@ -231,12 +233,14 @@ function R2PanelInner({ locale }: { locale: Locale }) {
   }
 
   async function deleteBucket(row: R2BucketItem) {
+    if (deletingBucket) return;
     const ok = await confirm({
       title: t(locale, 'r2.confirmDelete', { name: row.name }),
       confirmLabel: t(locale, 'common.confirm'),
       cancelLabel: t(locale, 'common.cancel'),
     });
     if (!ok) return;
+    setDeletingBucket(`${row.cfAccountId}/${row.name}`);
     try {
       const res = await fetch(
         `/api/r2/${encodeURIComponent(row.accountId)}/${encodeURIComponent(row.name)}?cfAccountId=${encodeURIComponent(row.cfAccountId)}`,
@@ -256,6 +260,8 @@ function R2PanelInner({ locale }: { locale: Locale }) {
       setRefreshKey((k) => k + 1);
     } catch {
       showToast(t(locale, 'common.requestFailed'), 'error');
+    } finally {
+      setDeletingBucket(null);
     }
   }
 
@@ -305,8 +311,12 @@ function R2PanelInner({ locale }: { locale: Locale }) {
             </a>
             <button
               className="btn btn-ghost btn-xs whitespace-nowrap text-error"
+              disabled={deletingBucket !== null}
               onClick={() => void deleteBucket(row)}
             >
+              {deletingBucket === `${row.cfAccountId}/${row.name}` && (
+                <span className="loading loading-spinner loading-xs" />
+              )}
               {t(locale, 'r2.delete')}
             </button>
           </span>
@@ -424,6 +434,7 @@ function R2PanelInner({ locale }: { locale: Locale }) {
             disabled={creating || !createAccount || !createCfAccount || createName.trim() === ''}
             onClick={() => void createBucket()}
           >
+            {creating && <span className="loading loading-spinner loading-xs" />}
             {t(locale, 'r2.create')}
           </button>
         </div>

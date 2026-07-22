@@ -62,6 +62,8 @@ export default function SettingsTab({
   const [custom, setCustom] = useState<CustomDomain[]>([]);
   const [domainInput, setDomainInput] = useState('');
   const [domainBusy, setDomainBusy] = useState(false);
+  const [removingDomain, setRemovingDomain] = useState<string | null>(null);
+  const [r2devBusy, setR2devBusy] = useState(false);
   // CORS
   const [corsRules, setCorsRules] = useState<CorsRule[]>([]);
   const [corsBusy, setCorsBusy] = useState(false);
@@ -107,6 +109,7 @@ export default function SettingsTab({
   }, [reload]);
 
   async function toggleR2Dev(enabled: boolean) {
+    setR2devBusy(true);
     try {
       const res = await fetch(withCf(`${apiBase}/domains`, cfAccountId), {
         method: 'PUT',
@@ -120,6 +123,8 @@ export default function SettingsTab({
       setManaged(((await res.json()) as { managed: ManagedDomain }).managed);
     } catch {
       showToast(t(locale, 'common.requestFailed'), 'error');
+    } finally {
+      setR2devBusy(false);
     }
   }
 
@@ -148,12 +153,14 @@ export default function SettingsTab({
   }
 
   async function removeDomain(domain: string) {
+    if (removingDomain) return;
     const ok = await confirm({
       title: t(locale, 'r2.confirmRemoveDomain', { domain }),
       confirmLabel: t(locale, 'common.confirm'),
       cancelLabel: t(locale, 'common.cancel'),
     });
     if (!ok) return;
+    setRemovingDomain(domain);
     try {
       const res = await fetch(withCf(`${apiBase}/domains?domain=${encodeURIComponent(domain)}`, cfAccountId), {
         method: 'DELETE',
@@ -166,6 +173,8 @@ export default function SettingsTab({
       void reload();
     } catch {
       showToast(t(locale, 'common.requestFailed'), 'error');
+    } finally {
+      setRemovingDomain(null);
     }
   }
 
@@ -241,7 +250,7 @@ export default function SettingsTab({
             type="checkbox"
             className="toggle toggle-primary shrink-0"
             checked={managed?.enabled ?? false}
-            disabled={managed === null}
+            disabled={managed === null || r2devBusy}
             onChange={(e) => void toggleR2Dev(e.target.checked)}
           />
         </div>
@@ -257,9 +266,14 @@ export default function SettingsTab({
               <span className="badge badge-ghost badge-sm shrink-0 whitespace-nowrap">SSL: {d.sslStatus ?? '—'}</span>
               <button
                 className="btn btn-ghost btn-xs shrink-0 whitespace-nowrap text-error"
+                disabled={removingDomain !== null}
                 onClick={() => void removeDomain(d.domain)}
               >
-                <Trash2 size={12} strokeWidth={1.75} />
+                {removingDomain === d.domain ? (
+                  <span className="loading loading-spinner loading-xs" />
+                ) : (
+                  <Trash2 size={12} strokeWidth={1.75} />
+                )}
               </button>
             </li>
           ))}
@@ -277,6 +291,7 @@ export default function SettingsTab({
             disabled={domainBusy || domainInput.trim() === ''}
             onClick={() => void addDomain()}
           >
+            {domainBusy && <span className="loading loading-spinner loading-xs" />}
             {t(locale, 'r2.settingsAddDomain')}
           </button>
         </div>
@@ -376,6 +391,7 @@ export default function SettingsTab({
               disabled={corsBusy}
               onClick={() => void saveCors()}
             >
+              {corsBusy && <span className="loading loading-spinner loading-xs" />}
               {t(locale, 'r2.corsSave')}
             </button>
           </div>
@@ -497,6 +513,7 @@ export default function SettingsTab({
               disabled={lifecycleBusy}
               onClick={() => void saveLifecycle()}
             >
+              {lifecycleBusy && <span className="loading loading-spinner loading-xs" />}
               {t(locale, 'r2.lifecycleSave')}
             </button>
           </div>
