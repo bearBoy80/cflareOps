@@ -1241,27 +1241,39 @@ export class CfClient {
         viewer: {
           accounts: {
             r2StorageAdaptiveGroups: {
-              dimensions: { bucketName: string };
+              dimensions: { bucketName: string; datetime: string };
               max: { payloadSize: number; metadataSize: number; objectCount: number };
             }[];
           }[];
         };
       }>(
+        // orderBy datetime_DESC：limit 截断时优先保住最新快照
         `query($account: String!, $since: Time!, $until: Time!) {
           viewer { accounts(filter: {accountTag: $account}) {
-            r2StorageAdaptiveGroups(limit: 1000, filter: {datetime_geq: $since, datetime_leq: $until}) {
-              dimensions { bucketName }
+            r2StorageAdaptiveGroups(limit: 1000, filter: {datetime_geq: $since, datetime_leq: $until}, orderBy: [datetime_DESC]) {
+              dimensions { bucketName datetime }
               max { payloadSize metadataSize objectCount }
             }
           } }
         }`,
         { account: cfAccountId, since: since.toISOString(), until: until.toISOString() },
       );
-      return (data.viewer.accounts[0]?.r2StorageAdaptiveGroups ?? []).map((r) => ({
-        bucketName: r.dimensions.bucketName,
-        payloadSize: r.max.payloadSize,
-        metadataSize: r.max.metadataSize,
-        objectCount: r.max.objectCount,
+      // 每桶只留 datetime 最新的一条：窗口内取 max 会让删除后的下降被删前峰值盖住，最长滞后 24h
+      const latest = new Map<
+        string,
+        { datetime: string; payloadSize: number; metadataSize: number; objectCount: number }
+      >();
+      for (const r of data.viewer.accounts[0]?.r2StorageAdaptiveGroups ?? []) {
+        const prev = latest.get(r.dimensions.bucketName);
+        if (!prev || r.dimensions.datetime > prev.datetime) {
+          latest.set(r.dimensions.bucketName, { datetime: r.dimensions.datetime, ...r.max });
+        }
+      }
+      return [...latest.entries()].map(([bucketName, m]) => ({
+        bucketName,
+        payloadSize: m.payloadSize,
+        metadataSize: m.metadataSize,
+        objectCount: m.objectCount,
       }));
     });
   }

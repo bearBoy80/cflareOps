@@ -234,21 +234,37 @@ describe('CfClient R2 GraphQL usage', () => {
     return { seen, fetchImpl };
   }
 
-  it('queryR2StorageSnapshot maps per-bucket max metrics', async () => {
+  it('queryR2StorageSnapshot keeps only the latest snapshot per bucket', async () => {
     const { seen, fetchImpl } = graphqlCapture({
       viewer: {
         accounts: [
           {
+            // 故意乱序：b1 的旧快照排在新快照前面，实现必须按 datetime 比较而非取首条/取 max
             r2StorageAdaptiveGroups: [
-              { dimensions: { bucketName: 'b1' }, max: { payloadSize: 100, metadataSize: 5, objectCount: 3 } },
+              {
+                dimensions: { bucketName: 'b1', datetime: '2026-07-22T04:00:00Z' },
+                max: { payloadSize: 100, metadataSize: 5, objectCount: 3 },
+              },
+              {
+                dimensions: { bucketName: 'b2', datetime: '2026-07-22T08:00:00Z' },
+                max: { payloadSize: 900, metadataSize: 9, objectCount: 9 },
+              },
+              {
+                dimensions: { bucketName: 'b1', datetime: '2026-07-22T08:00:00Z' },
+                max: { payloadSize: 50, metadataSize: 2, objectCount: 1 },
+              },
             ],
           },
         ],
       },
     });
     const rows = await new CfClient('tok', fetchImpl).queryR2StorageSnapshot('cf-1');
-    expect(rows).toEqual([{ bucketName: 'b1', payloadSize: 100, metadataSize: 5, objectCount: 3 }]);
+    expect(rows).toEqual([
+      { bucketName: 'b1', payloadSize: 50, metadataSize: 2, objectCount: 1 },
+      { bucketName: 'b2', payloadSize: 900, metadataSize: 9, objectCount: 9 },
+    ]);
     expect(seen.query).toContain('r2StorageAdaptiveGroups');
+    expect(seen.query).toContain('datetime_DESC');
     expect(seen.variables?.account).toBe('cf-1');
   });
 
