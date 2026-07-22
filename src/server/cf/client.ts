@@ -1132,4 +1132,112 @@ export class CfClient {
       await this.sdk.r2.buckets.objects.delete(bucket, encoded, { account_id: cfAccountId });
     });
   }
+
+  /** 存储快照：近 24h 每桶体积/对象数（max 聚合近似当前值），同步时写入 r2_buckets 缓存列 */
+  queryR2StorageSnapshot(
+    cfAccountId: string,
+  ): Promise<{ bucketName: string; payloadSize: number; metadataSize: number; objectCount: number }[]> {
+    return this.wrap(async () => {
+      const until = new Date();
+      const since = new Date(until.getTime() - 86_400_000);
+      const data = await this.graphql<{
+        viewer: {
+          accounts: {
+            r2StorageAdaptiveGroups: {
+              dimensions: { bucketName: string };
+              max: { payloadSize: number; metadataSize: number; objectCount: number };
+            }[];
+          }[];
+        };
+      }>(
+        `query($account: String!, $since: Time!, $until: Time!) {
+          viewer { accounts(filter: {accountTag: $account}) {
+            r2StorageAdaptiveGroups(limit: 1000, filter: {datetime_geq: $since, datetime_leq: $until}) {
+              dimensions { bucketName }
+              max { payloadSize metadataSize objectCount }
+            }
+          } }
+        }`,
+        { account: cfAccountId, since: since.toISOString(), until: until.toISOString() },
+      );
+      return (data.viewer.accounts[0]?.r2StorageAdaptiveGroups ?? []).map((r) => ({
+        bucketName: r.dimensions.bucketName,
+        payloadSize: r.max.payloadSize,
+        metadataSize: r.max.metadataSize,
+        objectCount: r.max.objectCount,
+      }));
+    });
+  }
+
+  /** 单桶按 UTC 自然日的存储量趋势（详情页用量 tab） */
+  queryR2StorageDaily(
+    cfAccountId: string,
+    bucketName: string,
+    sinceISO: string,
+    untilISO: string,
+  ): Promise<{ date: string; payloadSize: number; objectCount: number }[]> {
+    return this.wrap(async () => {
+      const data = await this.graphql<{
+        viewer: {
+          accounts: {
+            r2StorageAdaptiveGroups: {
+              dimensions: { date: string };
+              max: { payloadSize: number; objectCount: number };
+            }[];
+          }[];
+        };
+      }>(
+        `query($account: String!, $bucket: String!, $since: Time!, $until: Time!) {
+          viewer { accounts(filter: {accountTag: $account}) {
+            r2StorageAdaptiveGroups(limit: 1000, filter: {bucketName: $bucket, datetime_geq: $since, datetime_leq: $until}) {
+              dimensions { date }
+              max { payloadSize objectCount }
+            }
+          } }
+        }`,
+        { account: cfAccountId, bucket: bucketName, since: sinceISO, until: untilISO },
+      );
+      return (data.viewer.accounts[0]?.r2StorageAdaptiveGroups ?? []).map((r) => ({
+        date: r.dimensions.date,
+        payloadSize: r.max.payloadSize,
+        objectCount: r.max.objectCount,
+      }));
+    });
+  }
+
+  /** 单桶按 UTC 自然日、按 actionType 的操作数（Class A/B 归类在 server/r2.ts） */
+  queryR2OperationsDaily(
+    cfAccountId: string,
+    bucketName: string,
+    sinceISO: string,
+    untilISO: string,
+  ): Promise<{ date: string; actionType: string; requests: number }[]> {
+    return this.wrap(async () => {
+      const data = await this.graphql<{
+        viewer: {
+          accounts: {
+            r2OperationsAdaptiveGroups: {
+              dimensions: { date: string; actionType: string };
+              sum: { requests: number };
+            }[];
+          }[];
+        };
+      }>(
+        `query($account: String!, $bucket: String!, $since: Time!, $until: Time!) {
+          viewer { accounts(filter: {accountTag: $account}) {
+            r2OperationsAdaptiveGroups(limit: 10000, filter: {bucketName: $bucket, datetime_geq: $since, datetime_leq: $until}) {
+              dimensions { date actionType }
+              sum { requests }
+            }
+          } }
+        }`,
+        { account: cfAccountId, bucket: bucketName, since: sinceISO, until: untilISO },
+      );
+      return (data.viewer.accounts[0]?.r2OperationsAdaptiveGroups ?? []).map((r) => ({
+        date: r.dimensions.date,
+        actionType: r.dimensions.actionType,
+        requests: r.sum.requests,
+      }));
+    });
+  }
 }

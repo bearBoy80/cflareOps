@@ -120,3 +120,91 @@ describe('CfClient R2 objects', () => {
     expect(seenUrl).toContain('/accounts/cf-1/r2/buckets/b1/objects/docs/a%20b.txt');
   });
 });
+
+describe('CfClient R2 GraphQL usage', () => {
+  function graphqlCapture(data: unknown) {
+    const seen: { query?: string; variables?: Record<string, unknown> } = {};
+    const fetchImpl: typeof fetch = async (input, init) => {
+      expect(String(input)).toContain('/graphql');
+      const body = JSON.parse(String(init?.body)) as { query: string; variables: Record<string, unknown> };
+      seen.query = body.query;
+      seen.variables = body.variables;
+      return jsonResponse({ data });
+    };
+    return { seen, fetchImpl };
+  }
+
+  it('queryR2StorageSnapshot maps per-bucket max metrics', async () => {
+    const { seen, fetchImpl } = graphqlCapture({
+      viewer: {
+        accounts: [
+          {
+            r2StorageAdaptiveGroups: [
+              { dimensions: { bucketName: 'b1' }, max: { payloadSize: 100, metadataSize: 5, objectCount: 3 } },
+            ],
+          },
+        ],
+      },
+    });
+    const rows = await new CfClient('tok', fetchImpl).queryR2StorageSnapshot('cf-1');
+    expect(rows).toEqual([{ bucketName: 'b1', payloadSize: 100, metadataSize: 5, objectCount: 3 }]);
+    expect(seen.query).toContain('r2StorageAdaptiveGroups');
+    expect(seen.variables?.account).toBe('cf-1');
+  });
+
+  it('queryR2StorageDaily filters by bucket and groups by date', async () => {
+    const { seen, fetchImpl } = graphqlCapture({
+      viewer: {
+        accounts: [
+          {
+            r2StorageAdaptiveGroups: [
+              { dimensions: { date: '2026-07-01' }, max: { payloadSize: 10, objectCount: 1 } },
+              { dimensions: { date: '2026-07-02' }, max: { payloadSize: 20, objectCount: 2 } },
+            ],
+          },
+        ],
+      },
+    });
+    const rows = await new CfClient('tok', fetchImpl).queryR2StorageDaily(
+      'cf-1',
+      'b1',
+      '2026-07-01T00:00:00Z',
+      '2026-07-03T00:00:00Z',
+    );
+    expect(rows).toEqual([
+      { date: '2026-07-01', payloadSize: 10, objectCount: 1 },
+      { date: '2026-07-02', payloadSize: 20, objectCount: 2 },
+    ]);
+    expect(seen.variables?.bucket).toBe('b1');
+  });
+
+  it('queryR2OperationsDaily returns per-actionType daily sums', async () => {
+    const { fetchImpl } = graphqlCapture({
+      viewer: {
+        accounts: [
+          {
+            r2OperationsAdaptiveGroups: [
+              { dimensions: { date: '2026-07-01', actionType: 'GetObject' }, sum: { requests: 7 } },
+              { dimensions: { date: '2026-07-01', actionType: 'PutObject' }, sum: { requests: 2 } },
+            ],
+          },
+        ],
+      },
+    });
+    const rows = await new CfClient('tok', fetchImpl).queryR2OperationsDaily(
+      'cf-1',
+      'b1',
+      '2026-07-01T00:00:00Z',
+      '2026-07-02T00:00:00Z',
+    );
+    expect(rows).toEqual([
+      { date: '2026-07-01', actionType: 'GetObject', requests: 7 },
+      { date: '2026-07-01', actionType: 'PutObject', requests: 2 },
+    ]);
+  });
+
+  it('empty accounts array degrades to []', async () => {
+    const { fetchImpl } = graphqlCapture({ viewer: { accounts: [] } });
+    expect(await new CfClient('tok', fetchImpl).queryR2StorageSnapshot('cf-1')).toEqual([]);
+  });
+});
