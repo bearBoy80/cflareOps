@@ -6,6 +6,7 @@ import type {
   CfPagesDeployment,
   CfPagesDomain,
   CfPagesProject,
+  CfR2Bucket,
   CfScriptSubdomain,
   CfTokenVerify,
   CfWorkerBinding,
@@ -1037,6 +1038,53 @@ export class CfClient {
         scriptName: r.dimensions.scriptName,
         requests: r.sum.requests,
       }));
+    });
+  }
+
+  /**
+   * 账号下 R2 桶列表。SDK 的 BucketListResponse 只映射 buckets 字段、丢弃响应游标，
+   * 无法翻页——v1 以 per_page=1000 单页拉取（个人多账号场景足够；超限桶被静默截断，
+   * 若未来需要需改走 rawEnvelope 读 result_info.cursor）。只列默认 jurisdiction。
+   */
+  listR2Buckets(cfAccountId: string): Promise<CfR2Bucket[]> {
+    return this.wrap(async () => {
+      const r = await this.sdk.r2.buckets.list({ account_id: cfAccountId, per_page: 1000 });
+      return (r.buckets ?? []).map((b) => ({
+        name: b.name ?? '',
+        creation_date: b.creation_date,
+        location: b.location,
+        storage_class: b.storage_class,
+        raw: b,
+      }));
+    });
+  }
+
+  /** 创建桶。SDK 参数名注意：位置提示是 locationHint（camelCase），创建用 storageClass、编辑却用 storage_class */
+  createR2Bucket(
+    cfAccountId: string,
+    opts: { name: string; location?: string; storageClass?: string },
+  ): Promise<CfR2Bucket> {
+    return this.wrap(async () => {
+      const b = await this.sdk.r2.buckets.create({
+        account_id: cfAccountId,
+        name: opts.name,
+        ...(opts.location ? { locationHint: opts.location as never } : {}),
+        ...(opts.storageClass ? { storageClass: opts.storageClass as never } : {}),
+      });
+      return {
+        name: b.name ?? opts.name,
+        creation_date: b.creation_date,
+        location: b.location,
+        storage_class: b.storage_class,
+        raw: b,
+      };
+    });
+  }
+
+  /** 删除桶（CF 侧要求桶为空，非空报错原样透出 CfApiError） */
+  deleteR2Bucket(cfAccountId: string, name: string): Promise<void> {
+    return this.wrap(async () => {
+      await this.sdk.r2.buckets.delete(name, { account_id: cfAccountId });
     });
   }
 }

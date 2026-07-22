@@ -151,3 +151,12 @@ export interface CfScriptSubdomain {
   enabled: boolean;
   previews_enabled: boolean;
 }
+
+/** 字段名与 SDK r2.buckets Bucket 对象一致（snake_case），raw 为 SDK 原始对象 */
+export interface CfR2Bucket {
+  name: string;
+  creation_date?: string;
+  location?: string;
+  storage_class?: string;
+  raw?: unknown;
+}
