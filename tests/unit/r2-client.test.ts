@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CfApiError, CfClient } from '@/server/cf/client';
+import { CfApiError, CfClient, R2ObjectTooLargeError } from '@/server/cf/client';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -138,6 +138,36 @@ describe('CfClient R2 objects', () => {
     await new CfClient('tok', fetchImpl).deleteR2Object('cf-1', 'b1', 'docs/a b.txt');
     expect(seenMethod).toBe('delete');
     expect(seenUrl).toContain('/accounts/cf-1/r2/buckets/b1/objects/docs/a%20b.txt');
+  });
+
+  it('getR2ObjectContent GETs the encoded object path and returns contentType + text', async () => {
+    let seenUrl = '';
+    const fetchImpl: typeof fetch = async (input) => {
+      seenUrl = String(input);
+      return new Response('hello world', {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Length': '11' },
+      });
+    };
+    const r = await new CfClient('tok', fetchImpl).getR2ObjectContent('cf-1', 'b1', 'docs/a b.txt', 1024);
+    expect(seenUrl).toContain('/accounts/cf-1/r2/buckets/b1/objects/docs/a%20b.txt');
+    expect(r.contentType).toBe('text/plain; charset=utf-8');
+    expect(r.text).toBe('hello world');
+  });
+
+  it('getR2ObjectContent throws R2ObjectTooLargeError when Content-Length exceeds maxBytes', async () => {
+    const fetchImpl: typeof fetch = async () =>
+      new Response('x'.repeat(20), { status: 200, headers: { 'Content-Length': '20' } });
+    await expect(new CfClient('tok', fetchImpl).getR2ObjectContent('cf-1', 'b1', 'big.txt', 10)).rejects.toBeInstanceOf(
+      R2ObjectTooLargeError,
+    );
+  });
+
+  it('getR2ObjectContent re-checks byte size after reading when Content-Length is absent', async () => {
+    const fetchImpl: typeof fetch = async () => new Response('x'.repeat(20), { status: 200 });
+    await expect(new CfClient('tok', fetchImpl).getR2ObjectContent('cf-1', 'b1', 'big.txt', 10)).rejects.toBeInstanceOf(
+      R2ObjectTooLargeError,
+    );
   });
 });
 
