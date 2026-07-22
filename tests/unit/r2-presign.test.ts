@@ -68,4 +68,17 @@ describe('presignR2ObjectUrl', () => {
     // 参数进入规范化 URL 参与签名，两个 URL 的签名必然不同
     expect(url.searchParams.get('X-Amz-Signature')).not.toBe(plain.searchParams.get('X-Amz-Signature'));
   });
+
+  it('keeps a plain-ASCII downloadFilename readable in the disposition param', async () => {
+    const url = new URL(
+      await presignR2ObjectUrl(CREDS, {
+        cfAccountId: 'cf-1',
+        bucket: 'b1',
+        key: 'report.csv',
+        method: 'GET',
+        downloadFilename: 'report.csv',
+      }),
+    );
+    expect(url.searchParams.get('response-content-disposition')).toBe("attachment; filename*=UTF-8''report.csv");
+  });
 });

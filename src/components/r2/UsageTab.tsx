@@ -2,16 +2,11 @@ import { useEffect, useState } from 'react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { type Locale, t } from '@/i18n';
 import { formatBytes } from '@/lib/formatBytes';
+import { withCf } from '@/lib/withCf';
 
 interface UsageData {
   storage: { date: string; payloadSize: number; objectCount: number }[];
   operations: { date: string; classA: number; classB: number }[];
-}
-
-/** 追加 cfAccountId 查询参数（同一 token 下多 CF 账号同名桶消歧），缺省时透传原 url 不变 */
-function withCf(url: string, cfAccountId?: string | null): string {
-  if (!cfAccountId) return url;
-  return `${url}${url.includes('?') ? '&' : '?'}cfAccountId=${encodeURIComponent(cfAccountId)}`;
 }
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {

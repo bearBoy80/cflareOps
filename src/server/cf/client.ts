@@ -37,6 +37,14 @@ export class CfApiError extends Error {
   }
 }
 
+/**
+ * SDK 把 objectKey 原样拼进 URL 路径不做编码——空格/特殊字符会产生非法 URL，
+ * 斜杠又必须保留为路径分隔：逐段 encodeURIComponent（deleteR2Object / getR2ObjectContent 共用）。
+ */
+function encodeR2ObjectKey(key: string): string {
+  return key.split('/').map(encodeURIComponent).join('/');
+}
+
 /** 对象超出服务端中转预览上限时的稳定标记错误（content 路由映射为 413 objectTooLarge） */
 export class R2ObjectTooLargeError extends Error {
   constructor() {
@@ -1149,20 +1157,18 @@ export class CfClient {
     });
   }
 
-  /**
-   * 删除对象。SDK 把 objectKey 原样拼进 URL 路径不做编码——空格/特殊字符会产生非法 URL，
-   * 斜杠又必须保留为路径分隔：逐段 encodeURIComponent 后再传入。
-   */
+  /** 删除对象。key 编码陷阱见 encodeR2ObjectKey。 */
   deleteR2Object(cfAccountId: string, bucket: string, key: string): Promise<void> {
     return this.wrap(async () => {
-      const encoded = key.split('/').map(encodeURIComponent).join('/');
-      await this.sdk.r2.buckets.objects.delete(bucket, encoded, { account_id: cfAccountId });
+      // 路由层已校验空 key；这里是纵深防御——空 key 会把 DELETE 打到桶路径上
+      if (!key) throw new CfApiError(400, ['object key is required']);
+      await this.sdk.r2.buckets.objects.delete(bucket, encodeR2ObjectKey(key), { account_id: cfAccountId });
     });
   }
 
   /**
    * 读取对象内容（服务端中转文本预览用）。SDK objects.get 返回原始 Response；
-   * key 与 deleteR2Object 同规则逐段 encodeURIComponent（SDK 不做路径编码）。
+   * key 编码陷阱见 encodeR2ObjectKey。
    * 先看 Content-Length 头拒超限；无该头（chunked）时读完后按实际字节数二次校验。
    */
   getR2ObjectContent(
@@ -1172,10 +1178,14 @@ export class CfClient {
     maxBytes: number,
   ): Promise<{ contentType: string | null; text: string }> {
     return this.wrap(async () => {
-      const encoded = key.split('/').map(encodeURIComponent).join('/');
-      const res = await this.sdk.r2.buckets.objects.get(bucket, encoded, { account_id: cfAccountId });
+      const res = await this.sdk.r2.buckets.objects.get(bucket, encodeR2ObjectKey(key), { account_id: cfAccountId });
+      // 注意：头缺失时 Number(null)=0（非 NaN），走不进这个分支——isFinite 过滤的是畸形非数字头；
+      // 缺头（chunked）场景由下方读完后的字节数二次校验兜底
       const len = Number(res.headers.get('content-length'));
-      if (Number.isFinite(len) && len > maxBytes) throw new R2ObjectTooLargeError();
+      if (Number.isFinite(len) && len > maxBytes) {
+        void res.body?.cancel();
+        throw new R2ObjectTooLargeError();
+      }
       const buf = await res.arrayBuffer();
       if (buf.byteLength > maxBytes) throw new R2ObjectTooLargeError();
       return { contentType: res.headers.get('content-type'), text: new TextDecoder().decode(buf) };

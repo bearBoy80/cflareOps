@@ -4,12 +4,11 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { type Locale, t } from '@/i18n';
 import { formatBytes } from '@/lib/formatBytes';
 import { previewKind } from '@/lib/previewKind';
+import { triggerDownload } from '@/lib/triggerDownload';
+import { withCf } from '@/lib/withCf';
 
-/** 追加 cfAccountId 查询参数（与 ObjectsTab 同款；同一 token 下多 CF 账号同名桶消歧） */
-function withCf(url: string, cfAccountId?: string | null): string {
-  if (!cfAccountId) return url;
-  return `${url}${url.includes('?') ? '&' : '?'}cfAccountId=${encodeURIComponent(cfAccountId)}`;
-}
+/** 与服务端 content 路由的 MAX_PREVIEW_BYTES 一致，仅用于免网络往返的本地短路；服务端校验仍是权威 */
+const MAX_TEXT_PREVIEW_BYTES = 1_048_576;
 
 type State =
   | { phase: 'loading' }
@@ -58,6 +57,10 @@ export default function PreviewModal({
       }
       try {
         if (kind === 'text' || kind === 'markdown') {
+          if (object.size !== null && object.size > MAX_TEXT_PREVIEW_BYTES) {
+            setState({ phase: 'error', message: t(locale, 'r2.previewTooLarge'), tooLarge: true });
+            return;
+          }
           const res = await fetch(withCf(`${apiBase}/content?key=${encodeURIComponent(object.key)}`, cfAccountId));
           if (!res.ok) {
             if (cancelled) return;
@@ -101,7 +104,7 @@ export default function PreviewModal({
       cancelled = true;
     };
     // object.key 变化即整体重挂载（父组件按对象渲染），依赖只列稳定输入
-  }, [kind, locale, apiBase, cfAccountId, object.key]);
+  }, [kind, locale, apiBase, cfAccountId, object.key, object.size]);
 
   async function download() {
     try {
@@ -115,7 +118,7 @@ export default function PreviewModal({
         return;
       }
       const { url } = (await res.json()) as { url: string };
-      window.open(url, '_blank', 'noopener');
+      triggerDownload(url);
     } catch {
       showToast(t(locale, 'common.requestFailed'), 'error');
     }

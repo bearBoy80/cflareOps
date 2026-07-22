@@ -140,6 +140,13 @@ describe('CfClient R2 objects', () => {
     expect(seenUrl).toContain('/accounts/cf-1/r2/buckets/b1/objects/docs/a%20b.txt');
   });
 
+  it('deleteR2Object rejects an empty key before touching the API', async () => {
+    const fetchImpl: typeof fetch = async () => {
+      throw new Error('must not fetch');
+    };
+    await expect(new CfClient('tok', fetchImpl).deleteR2Object('cf-1', 'b1', '')).rejects.toBeInstanceOf(CfApiError);
+  });
+
   it('getR2ObjectContent GETs the encoded object path and returns contentType + text', async () => {
     let seenUrl = '';
     const fetchImpl: typeof fetch = async (input) => {
@@ -326,6 +333,19 @@ describe('CfClient R2 settings', () => {
     });
     expect(JSON.parse(seenBody)).toEqual({ domain: 'cdn.a.dev', enabled: true, zoneId: 'z1' });
     expect(d.domain).toBe('cdn.a.dev');
+  });
+
+  it('detachR2CustomDomain DELETEs the custom domain path', async () => {
+    let seenUrl = '';
+    let seenMethod = '';
+    const fetchImpl: typeof fetch = async (input, init) => {
+      seenUrl = String(input);
+      seenMethod = (init?.method ?? '').toLowerCase();
+      return jsonResponse(envelope({}));
+    };
+    await new CfClient('tok', fetchImpl).detachR2CustomDomain('cf-1', 'b1', 'cdn.a.dev');
+    expect(seenMethod).toBe('delete');
+    expect(seenUrl).toContain('/accounts/cf-1/r2/buckets/b1/domains/custom/cdn.a.dev');
   });
 
   it('managed domain get/set round-trips enabled', async () => {

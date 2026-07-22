@@ -7,6 +7,8 @@ import { type Locale, t } from '@/i18n';
 import { formatBytes } from '@/lib/formatBytes';
 import { previewKind } from '@/lib/previewKind';
 import { relativeTime } from '@/lib/time';
+import { triggerDownload } from '@/lib/triggerDownload';
+import { withCf } from '@/lib/withCf';
 
 interface R2Object {
   key: string;
@@ -14,12 +16,6 @@ interface R2Object {
   etag: string | null;
   last_modified: string | null;
   is_prefix: boolean;
-}
-
-/** 追加 cfAccountId 查询参数（同一 token 下多 CF 账号同名桶消歧），缺省时透传原 url 不变 */
-function withCf(url: string, cfAccountId?: string | null): string {
-  if (!cfAccountId) return url;
-  return `${url}${url.includes('?') ? '&' : '?'}cfAccountId=${encodeURIComponent(cfAccountId)}`;
 }
 
 export default function ObjectsTab({
@@ -42,6 +38,8 @@ export default function ObjectsTab({
   const fileInput = useRef<HTMLInputElement>(null);
   const { showToast } = useToast();
   const confirm = useConfirm();
+  // 稳定引用：PreviewModal 的 Escape 监听 effect 依赖 onClose，内联箭头会导致每次渲染重挂监听
+  const closePreview = useCallback(() => setPreview(null), []);
 
   const load = useCallback(
     async (p: string, cur: string | null, append: boolean) => {
@@ -99,7 +97,7 @@ export default function ObjectsTab({
         return;
       }
       const { url } = (await res.json()) as { url: string };
-      window.open(url, '_blank', 'noopener');
+      triggerDownload(url);
     } catch {
       showToast(t(locale, 'common.requestFailed'), 'error');
     }
@@ -129,6 +127,8 @@ export default function ObjectsTab({
 
   async function upload(file: globalThis.File) {
     const key = prefix + file.name;
+    // 立即置 0 禁用按钮：presign 往返期间的窗口内不允许再次触发上传
+    setUploadPct(0);
     try {
       const res = await fetch(withCf(`${apiBase}/presign`, cfAccountId), {
         method: 'POST',
@@ -329,7 +329,7 @@ export default function ObjectsTab({
           apiBase={apiBase}
           cfAccountId={cfAccountId}
           object={preview}
-          onClose={() => setPreview(null)}
+          onClose={closePreview}
         />
       )}
     </div>
