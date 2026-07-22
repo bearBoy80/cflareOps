@@ -1,5 +1,6 @@
 import { marked } from 'marked';
 import { useEffect, useState } from 'react';
+import { useToast } from '@/components/ui/ToastProvider';
 import { type Locale, t } from '@/i18n';
 import { formatBytes } from '@/lib/formatBytes';
 import { previewKind } from '@/lib/previewKind';
@@ -36,6 +37,7 @@ export default function PreviewModal({
   onClose: () => void;
 }) {
   const [state, setState] = useState<State>({ phase: 'loading' });
+  const { showToast } = useToast();
   const kind = previewKind(object.key);
   const filename = object.key.split('/').pop() ?? object.key;
 
@@ -108,11 +110,14 @@ export default function PreviewModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: object.key, op: 'get', download: true }),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        showToast(res.status === 403 ? t(locale, 'r2.forbiddenHint') : t(locale, 'common.requestFailed'), 'error');
+        return;
+      }
       const { url } = (await res.json()) as { url: string };
       window.open(url, '_blank', 'noopener');
     } catch {
-      /* 顶栏下载失败静默：主体错误态已有兜底提示 */
+      showToast(t(locale, 'common.requestFailed'), 'error');
     }
   }
 

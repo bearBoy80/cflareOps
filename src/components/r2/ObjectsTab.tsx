@@ -264,7 +264,7 @@ export default function ObjectsTab({
                       <button
                         type="button"
                         className="link-hover inline-flex min-w-0 items-center gap-2 text-left font-mono hover:text-primary"
-                        title={t(locale, 'r2.preview')}
+                        title={previewKind(obj.key) ? t(locale, 'r2.preview') : t(locale, 'r2.download')}
                         onClick={() => {
                           if (previewKind(obj.key)) setPreview({ key: obj.key, size: obj.size });
                           else void download(obj);
