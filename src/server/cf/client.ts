@@ -7,6 +7,7 @@ import type {
   CfPagesDomain,
   CfPagesProject,
   CfR2Bucket,
+  CfR2Object,
   CfScriptSubdomain,
   CfTokenVerify,
   CfWorkerBinding,
@@ -1085,6 +1086,50 @@ export class CfClient {
   deleteR2Bucket(cfAccountId: string, name: string): Promise<void> {
     return this.wrap(async () => {
       await this.sdk.r2.buckets.delete(name, { account_id: cfAccountId });
+    });
+  }
+
+  /**
+   * 对象列表（REST /r2/buckets/:bucket/objects，CursorPagination）。固定 delimiter='/'：
+   * 命中分隔符的键被折叠成单条"前缀"条目（key 以 / 结尾、无 size/etag），映射为 is_prefix=true。
+   * 单页返回 + 游标，由前端「加载更多」翻页；不用 SDK 的 for-await 全量迭代（对象数无上界）。
+   */
+  listR2Objects(
+    cfAccountId: string,
+    bucket: string,
+    opts: { prefix?: string; cursor?: string; perPage?: number } = {},
+  ): Promise<{ objects: CfR2Object[]; cursor: string | null }> {
+    return this.wrap(async () => {
+      const page = await this.sdk.r2.buckets.objects.list(bucket, {
+        account_id: cfAccountId,
+        per_page: opts.perPage ?? 100,
+        delimiter: '/',
+        ...(opts.prefix ? { prefix: opts.prefix } : {}),
+        ...(opts.cursor ? { cursor: opts.cursor } : {}),
+      });
+      const objects = page.getPaginatedItems().map((o) => {
+        const key = o.key ?? '';
+        const isPrefix = key.endsWith('/') && !o.etag;
+        return {
+          key,
+          size: isPrefix ? null : (o.size ?? null),
+          etag: isPrefix ? null : (o.etag ?? null),
+          last_modified: isPrefix ? null : (o.last_modified ?? null),
+          is_prefix: isPrefix,
+        };
+      });
+      return { objects, cursor: page.nextPageParams()?.cursor ?? null };
+    });
+  }
+
+  /**
+   * 删除对象。SDK 把 objectKey 原样拼进 URL 路径不做编码——空格/特殊字符会产生非法 URL，
+   * 斜杠又必须保留为路径分隔：逐段 encodeURIComponent 后再传入。
+   */
+  deleteR2Object(cfAccountId: string, bucket: string, key: string): Promise<void> {
+    return this.wrap(async () => {
+      const encoded = key.split('/').map(encodeURIComponent).join('/');
+      await this.sdk.r2.buckets.objects.delete(bucket, encoded, { account_id: cfAccountId });
     });
   }
 }

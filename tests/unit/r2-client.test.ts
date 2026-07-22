@@ -72,3 +72,51 @@ describe('CfClient R2 buckets', () => {
     await expect(new CfClient('tok', failing).deleteR2Bucket('cf-1', 'b1')).rejects.toThrowError(CfApiError);
   });
 });
+
+describe('CfClient R2 objects', () => {
+  it('listR2Objects passes prefix/delimiter/cursor and returns next cursor', async () => {
+    let seenUrl = '';
+    const fetchImpl: typeof fetch = async (input) => {
+      seenUrl = String(input);
+      return jsonResponse(
+        envelope(
+          [
+            { key: 'docs/', size: 0 }, // delimiter 分组出的前缀条目
+            { key: 'a.txt', size: 12, etag: 'e1', last_modified: '2026-07-01T00:00:00Z' },
+          ],
+          { cursor: 'next-1', per_page: 100 },
+        ),
+      );
+    };
+    const r = await new CfClient('tok', fetchImpl).listR2Objects('cf-1', 'b1', { prefix: 'docs/', cursor: 'c0' });
+    const url = new URL(seenUrl);
+    expect(url.pathname).toContain('/accounts/cf-1/r2/buckets/b1/objects');
+    expect(url.searchParams.get('prefix')).toBe('docs/');
+    expect(url.searchParams.get('delimiter')).toBe('/');
+    expect(url.searchParams.get('cursor')).toBe('c0');
+    expect(r.cursor).toBe('next-1');
+    expect(r.objects).toEqual([
+      { key: 'docs/', size: null, etag: null, last_modified: null, is_prefix: true },
+      { key: 'a.txt', size: 12, etag: 'e1', last_modified: '2026-07-01T00:00:00Z', is_prefix: false },
+    ]);
+  });
+
+  it('listR2Objects returns null cursor on the last page', async () => {
+    const fetchImpl: typeof fetch = async () => jsonResponse(envelope([], { per_page: 100 }));
+    const r = await new CfClient('tok', fetchImpl).listR2Objects('cf-1', 'b1');
+    expect(r).toEqual({ objects: [], cursor: null });
+  });
+
+  it('deleteR2Object percent-encodes each key segment but keeps slashes', async () => {
+    let seenUrl = '';
+    let seenMethod = '';
+    const fetchImpl: typeof fetch = async (input, init) => {
+      seenUrl = String(input);
+      seenMethod = (init?.method ?? '').toLowerCase();
+      return jsonResponse(envelope({ key: 'docs/a b.txt' }));
+    };
+    await new CfClient('tok', fetchImpl).deleteR2Object('cf-1', 'b1', 'docs/a b.txt');
+    expect(seenMethod).toBe('delete');
+    expect(seenUrl).toContain('/accounts/cf-1/r2/buckets/b1/objects/docs/a%20b.txt');
+  });
+});

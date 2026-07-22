@@ -160,3 +160,12 @@ export interface CfR2Bucket {
   storage_class?: string;
   raw?: unknown;
 }
+
+/** REST 对象列表条目。is_prefix：delimiter 分组出的"文件夹"条目（key 以 / 结尾且无内容大小） */
+export interface CfR2Object {
+  key: string;
+  size: number | null;
+  etag: string | null;
+  last_modified: string | null;
+  is_prefix: boolean;
+}
