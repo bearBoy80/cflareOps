@@ -1,0 +1,18 @@
+---
+import MainLayout from '@/layouts/MainLayout.astro';
+import R2BucketDetailPanel from '@/components/r2/R2BucketDetailPanel';
+import { t } from '@/i18n';
+import { localeFromPath, localizePath } from '@/i18n/routing';
+const { accountId, bucket } = Astro.params;
+const locale = localeFromPath(Astro.url.pathname);
+const initialTab = Astro.url.searchParams.get('tab');
+---
+<MainLayout title={`${t(locale, 'r2.bucketDetailTitle')} · ${bucket}`} locale={locale}>
+  <nav class="breadcrumbs mb-4 text-sm">
+    <ul>
+      <li><a href={localizePath(locale, '/r2')}>{t(locale, 'nav.r2')}</a></li>
+      <li class="font-mono">{bucket}</li>
+    </ul>
+  </nav>
+  <R2BucketDetailPanel accountId={accountId!} bucket={bucket!} locale={locale} initialTab={initialTab} client:load />
+</MainLayout>
