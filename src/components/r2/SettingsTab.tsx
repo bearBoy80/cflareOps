@@ -108,16 +108,20 @@ export default function SettingsTab({
   }, [reload]);
 
   async function toggleR2Dev(enabled: boolean) {
-    const res = await fetch(withCf(`${apiBase}/domains`, cfAccountId), {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled }),
-    });
-    if (!res.ok) {
-      showToast(failMsg(res.status), 'error');
-      return;
+    try {
+      const res = await fetch(withCf(`${apiBase}/domains`, cfAccountId), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      });
+      if (!res.ok) {
+        showToast(failMsg(res.status), 'error');
+        return;
+      }
+      setManaged(((await res.json()) as { managed: ManagedDomain }).managed);
+    } catch {
+      showToast(t(locale, 'common.requestFailed'), 'error');
     }
-    setManaged(((await res.json()) as { managed: ManagedDomain }).managed);
   }
 
   async function addDomain() {
@@ -137,6 +141,8 @@ export default function SettingsTab({
       showToast(t(locale, 'r2.settingsDomainAdded'), 'success');
       setDomainInput('');
       void reload();
+    } catch {
+      showToast(t(locale, 'common.requestFailed'), 'error');
     } finally {
       setDomainBusy(false);
     }
@@ -178,6 +184,8 @@ export default function SettingsTab({
         return;
       }
       showToast(t(locale, 'r2.corsSaved'), 'success');
+    } catch {
+      showToast(t(locale, 'common.requestFailed'), 'error');
     } finally {
       setCorsBusy(false);
     }
@@ -197,6 +205,8 @@ export default function SettingsTab({
         return;
       }
       showToast(t(locale, 'r2.lifecycleSaved'), 'success');
+    } catch {
+      showToast(t(locale, 'common.requestFailed'), 'error');
     } finally {
       setLifecycleBusy(false);
     }
@@ -323,7 +333,11 @@ export default function SettingsTab({
                 onChange={(e) => {
                   const headers = csv(e.target.value);
                   updateCors(i, {
-                    allowed: { ...rule.allowed, ...(headers.length ? { headers } : {}) },
+                    allowed: {
+                      methods: rule.allowed.methods,
+                      origins: rule.allowed.origins,
+                      ...(headers.length ? { headers } : {}),
+                    },
                   });
                 }}
               />
