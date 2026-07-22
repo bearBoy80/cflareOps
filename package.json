@@ -37,6 +37,7 @@
     "@tanstack/react-table": "^8.21.3",
     "@uiw/react-codemirror": "^4.25.10",
     "astro": "^5.0.0",
+    "aws4fetch": "^1.0.20",
     "cloudflare": "^6.1.0",
     "daisyui": "^5.0.0",
     "dayjs": "^1.11.21",
