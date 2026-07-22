@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import PreviewModal from '@/components/r2/PreviewModal';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/ui/ToastProvider';
+import { usePageshowRefresh } from '@/components/ui/usePageshowRefresh';
 import { type Locale, t } from '@/i18n';
 import { formatBytes } from '@/lib/formatBytes';
 import { previewKind } from '@/lib/previewKind';
@@ -77,6 +78,13 @@ export default function ObjectsTab({
   useEffect(() => {
     void load(prefix, null, false);
   }, [prefix, load]);
+
+  // 后退回本页命中 bfcache 时列表是快照旧数据（删过的对象仍显示）——重拉当前目录
+  usePageshowRefresh(
+    useCallback(() => {
+      void load(prefix, null, false);
+    }, [load, prefix]),
+  );
 
   /** 面包屑：'' → ['根']；'a/b/' → ['根', 'a', 'b'] */
   const crumbs = prefix === '' ? [] : prefix.replace(/\/$/, '').split('/');

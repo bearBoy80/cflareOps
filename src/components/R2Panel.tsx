@@ -8,6 +8,7 @@ import { relativeTime } from '@/lib/time';
 import { ConfirmDialogProvider, useConfirm } from './ui/ConfirmDialog';
 import TablePagination from './ui/TablePagination';
 import { ToastProvider, useToast } from './ui/ToastProvider';
+import { usePageshowRefresh } from './ui/usePageshowRefresh';
 
 interface R2BucketItem {
   name: string;
@@ -109,6 +110,9 @@ function R2PanelInner({ locale }: { locale: Locale }) {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // 后退回本页命中 bfcache 时列表是快照旧数据——递增 refreshKey 强制重拉
+  usePageshowRefresh(useCallback(() => setRefreshKey((k) => k + 1), []));
 
   useEffect(() => {
     void (async () => {
