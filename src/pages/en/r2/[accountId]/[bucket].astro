@@ -6,6 +6,7 @@ import { localeFromPath, localizePath } from '@/i18n/routing';
 const { accountId, bucket } = Astro.params;
 const locale = localeFromPath(Astro.url.pathname);
 const initialTab = Astro.url.searchParams.get('tab');
+const cfAccountId = Astro.url.searchParams.get('cfAccountId');
 ---
 <MainLayout title={`${t(locale, 'r2.bucketDetailTitle')} · ${bucket}`} locale={locale}>
   <nav class="breadcrumbs mb-4 text-sm">
@@ -14,5 +15,12 @@ const initialTab = Astro.url.searchParams.get('tab');
       <li class="font-mono">{bucket}</li>
     </ul>
   </nav>
-  <R2BucketDetailPanel accountId={accountId!} bucket={bucket!} locale={locale} initialTab={initialTab} client:load />
+  <R2BucketDetailPanel
+    accountId={accountId!}
+    bucket={bucket!}
+    locale={locale}
+    cfAccountId={cfAccountId}
+    initialTab={initialTab}
+    client:load
+  />
 </MainLayout>

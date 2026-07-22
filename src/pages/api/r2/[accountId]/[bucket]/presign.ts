@@ -14,7 +14,8 @@ export const POST: APIRoute = async ({ params, locals, request }) => {
   const objectKey = typeof body?.key === 'string' ? body.key : '';
   const op = body?.op === 'get' || body?.op === 'put' ? body.op : null;
   if (objectKey === '' || !op) return jsonError('key and op (get|put) are required', 400);
-  const bucket = await getCachedR2Bucket(db, userEmail, params.accountId!, params.bucket!);
+  const cfAccountId = new URL(request.url).searchParams.get('cfAccountId') ?? undefined;
+  const bucket = await getCachedR2Bucket(db, userEmail, params.accountId!, params.bucket!, cfAccountId);
   if (!bucket) return jsonError('Bucket not found', 404);
   try {
     const account = await getAccount(db, userEmail, params.accountId!);

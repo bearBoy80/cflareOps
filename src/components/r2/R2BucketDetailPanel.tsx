@@ -12,11 +12,13 @@ export default function R2BucketDetailPanel({
   accountId,
   bucket,
   locale,
+  cfAccountId,
   initialTab,
 }: {
   accountId: string;
   bucket: string;
   locale: Locale;
+  cfAccountId?: string | null;
   initialTab?: string | null;
 }) {
   const [tab, switchTab] = useDetailTab(TAB_KEYS, initialTab);
@@ -36,9 +38,9 @@ export default function R2BucketDetailPanel({
           />
           {/* tab 内容全宽垂直堆叠（移动端规则 10）；非激活 tab 卸载，切回时重新拉取保证新鲜 */}
           <div className="mt-4">
-            {tab === 'objects' && <ObjectsTab locale={locale} apiBase={apiBase} />}
-            {tab === 'settings' && <SettingsTab locale={locale} apiBase={apiBase} />}
-            {tab === 'usage' && <UsageTab locale={locale} apiBase={apiBase} />}
+            {tab === 'objects' && <ObjectsTab locale={locale} apiBase={apiBase} cfAccountId={cfAccountId} />}
+            {tab === 'settings' && <SettingsTab locale={locale} apiBase={apiBase} cfAccountId={cfAccountId} />}
+            {tab === 'usage' && <UsageTab locale={locale} apiBase={apiBase} cfAccountId={cfAccountId} />}
           </div>
         </div>
       </ConfirmDialogProvider>

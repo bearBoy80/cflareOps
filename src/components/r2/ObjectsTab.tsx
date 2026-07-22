@@ -14,7 +14,21 @@ interface R2Object {
   is_prefix: boolean;
 }
 
-export default function ObjectsTab({ locale, apiBase }: { locale: Locale; apiBase: string }) {
+/** 追加 cfAccountId 查询参数（同一 token 下多 CF 账号同名桶消歧），缺省时透传原 url 不变 */
+function withCf(url: string, cfAccountId?: string | null): string {
+  if (!cfAccountId) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}cfAccountId=${encodeURIComponent(cfAccountId)}`;
+}
+
+export default function ObjectsTab({
+  locale,
+  apiBase,
+  cfAccountId,
+}: {
+  locale: Locale;
+  apiBase: string;
+  cfAccountId?: string | null;
+}) {
   const [prefix, setPrefix] = useState('');
   const [objects, setObjects] = useState<R2Object[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -34,7 +48,7 @@ export default function ObjectsTab({ locale, apiBase }: { locale: Locale; apiBas
         const params = new URLSearchParams();
         if (p) params.set('prefix', p);
         if (cur) params.set('cursor', cur);
-        const res = await fetch(`${apiBase}/objects?${params}`);
+        const res = await fetch(withCf(`${apiBase}/objects?${params}`, cfAccountId));
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as { error?: string } | null;
           // 403 = token 缺 R2 权限：只影响本 tab，给本地化提示（不破坏整页）
@@ -54,7 +68,7 @@ export default function ObjectsTab({ locale, apiBase }: { locale: Locale; apiBas
         setLoadingMore(false);
       }
     },
-    [apiBase, locale],
+    [apiBase, cfAccountId, locale],
   );
 
   useEffect(() => {
@@ -72,7 +86,7 @@ export default function ObjectsTab({ locale, apiBase }: { locale: Locale; apiBas
 
   async function download(obj: R2Object) {
     try {
-      const res = await fetch(`${apiBase}/presign`, {
+      const res = await fetch(withCf(`${apiBase}/presign`, cfAccountId), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: obj.key, op: 'get' }),
@@ -96,7 +110,9 @@ export default function ObjectsTab({ locale, apiBase }: { locale: Locale; apiBas
     });
     if (!ok) return;
     try {
-      const res = await fetch(`${apiBase}/objects?key=${encodeURIComponent(obj.key)}`, { method: 'DELETE' });
+      const res = await fetch(withCf(`${apiBase}/objects?key=${encodeURIComponent(obj.key)}`, cfAccountId), {
+        method: 'DELETE',
+      });
       if (!res.ok) {
         showToast(res.status === 403 ? t(locale, 'r2.forbiddenHint') : t(locale, 'common.requestFailed'), 'error');
         return;
@@ -111,7 +127,7 @@ export default function ObjectsTab({ locale, apiBase }: { locale: Locale; apiBas
   async function upload(file: globalThis.File) {
     const key = prefix + file.name;
     try {
-      const res = await fetch(`${apiBase}/presign`, {
+      const res = await fetch(withCf(`${apiBase}/presign`, cfAccountId), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, op: 'put' }),

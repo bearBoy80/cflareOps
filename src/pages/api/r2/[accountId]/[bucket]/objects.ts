@@ -6,7 +6,8 @@ import { clientForAccount } from '@/server/workersPages';
 export const GET: APIRoute = async ({ params, locals, request }) => {
   const { db, key, userEmail } = await appContext(locals);
   const url = new URL(request.url);
-  const bucket = await getCachedR2Bucket(db, userEmail, params.accountId!, params.bucket!);
+  const cfAccountId = url.searchParams.get('cfAccountId') ?? undefined;
+  const bucket = await getCachedR2Bucket(db, userEmail, params.accountId!, params.bucket!, cfAccountId);
   if (!bucket) return jsonError('Bucket not found', 404);
   try {
     const client = await clientForAccount(db, key, userEmail, params.accountId!);
@@ -25,9 +26,11 @@ export const GET: APIRoute = async ({ params, locals, request }) => {
 
 export const DELETE: APIRoute = async ({ params, locals, request }) => {
   const { db, key, userEmail } = await appContext(locals);
-  const keyParam = new URL(request.url).searchParams.get('key') ?? '';
+  const searchParams = new URL(request.url).searchParams;
+  const keyParam = searchParams.get('key') ?? '';
   if (keyParam === '') return jsonError('key is required', 400);
-  const bucket = await getCachedR2Bucket(db, userEmail, params.accountId!, params.bucket!);
+  const cfAccountId = searchParams.get('cfAccountId') ?? undefined;
+  const bucket = await getCachedR2Bucket(db, userEmail, params.accountId!, params.bucket!, cfAccountId);
   if (!bucket) return jsonError('Bucket not found', 404);
   try {
     const client = await clientForAccount(db, key, userEmail, params.accountId!);

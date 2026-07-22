@@ -5,9 +5,10 @@ import { clientForAccount } from '@/server/workersPages';
 
 const DAYS = 30;
 
-export const GET: APIRoute = async ({ params, locals }) => {
+export const GET: APIRoute = async ({ params, locals, request }) => {
   const { db, key, userEmail } = await appContext(locals);
-  const bucket = await getCachedR2Bucket(db, userEmail, params.accountId!, params.bucket!);
+  const cfAccountId = new URL(request.url).searchParams.get('cfAccountId') ?? undefined;
+  const bucket = await getCachedR2Bucket(db, userEmail, params.accountId!, params.bucket!, cfAccountId);
   if (!bucket) return jsonError('Bucket not found', 404);
   try {
     const client = await clientForAccount(db, key, userEmail, params.accountId!);

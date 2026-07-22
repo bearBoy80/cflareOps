@@ -4,9 +4,10 @@ import { appContext, handleCfError, jsonError } from '@/server/context';
 import { getCachedR2Bucket } from '@/server/r2';
 import { clientForAccount, findZoneForHostname } from '@/server/workersPages';
 
-export const GET: APIRoute = async ({ params, locals }) => {
+export const GET: APIRoute = async ({ params, locals, request }) => {
   const { db, key, userEmail } = await appContext(locals);
-  const bucket = await getCachedR2Bucket(db, userEmail, params.accountId!, params.bucket!);
+  const cfAccountId = new URL(request.url).searchParams.get('cfAccountId') ?? undefined;
+  const bucket = await getCachedR2Bucket(db, userEmail, params.accountId!, params.bucket!, cfAccountId);
   if (!bucket) return jsonError('Bucket not found', 404);
   try {
     const client = await clientForAccount(db, key, userEmail, params.accountId!);
@@ -30,7 +31,8 @@ export const POST: APIRoute = async ({ params, locals, request }) => {
   const body = (await request.json().catch(() => null)) as { domain?: unknown } | null;
   const domain = typeof body?.domain === 'string' ? body.domain.trim().toLowerCase() : '';
   if (!isHostname(domain)) return jsonError('invalid hostname', 400, 'invalidHostname');
-  const bucket = await getCachedR2Bucket(db, userEmail, params.accountId!, params.bucket!);
+  const cfAccountId = new URL(request.url).searchParams.get('cfAccountId') ?? undefined;
+  const bucket = await getCachedR2Bucket(db, userEmail, params.accountId!, params.bucket!, cfAccountId);
   if (!bucket) return jsonError('Bucket not found', 404);
   const zone = await findZoneForHostname(db, userEmail, domain, bucket.cfAccountId);
   if (!zone) return jsonError('hostname is not in any aggregated zone', 400, 'zoneNotFound');
@@ -48,9 +50,11 @@ export const POST: APIRoute = async ({ params, locals, request }) => {
 
 export const DELETE: APIRoute = async ({ params, locals, request }) => {
   const { db, key, userEmail } = await appContext(locals);
-  const domain = new URL(request.url).searchParams.get('domain') ?? '';
+  const searchParams = new URL(request.url).searchParams;
+  const domain = searchParams.get('domain') ?? '';
   if (domain === '') return jsonError('domain is required', 400);
-  const bucket = await getCachedR2Bucket(db, userEmail, params.accountId!, params.bucket!);
+  const cfAccountId = searchParams.get('cfAccountId') ?? undefined;
+  const bucket = await getCachedR2Bucket(db, userEmail, params.accountId!, params.bucket!, cfAccountId);
   if (!bucket) return jsonError('Bucket not found', 404);
   try {
     const client = await clientForAccount(db, key, userEmail, params.accountId!);
@@ -66,7 +70,8 @@ export const PUT: APIRoute = async ({ params, locals, request }) => {
   const { db, key, userEmail } = await appContext(locals);
   const body = (await request.json().catch(() => null)) as { enabled?: unknown } | null;
   if (typeof body?.enabled !== 'boolean') return jsonError('enabled boolean is required', 400);
-  const bucket = await getCachedR2Bucket(db, userEmail, params.accountId!, params.bucket!);
+  const cfAccountId = new URL(request.url).searchParams.get('cfAccountId') ?? undefined;
+  const bucket = await getCachedR2Bucket(db, userEmail, params.accountId!, params.bucket!, cfAccountId);
   if (!bucket) return jsonError('Bucket not found', 404);
   try {
     const client = await clientForAccount(db, key, userEmail, params.accountId!);
