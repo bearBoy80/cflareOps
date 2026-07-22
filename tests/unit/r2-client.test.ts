@@ -81,10 +81,11 @@ describe('CfClient R2 objects', () => {
       return jsonResponse(
         envelope(
           [
-            { key: 'docs/', size: 0 }, // delimiter 分组出的前缀条目
+            // 真实 API：delimiter 命中的前缀在 result_info.delimited；result 里只有对象
+            //（零字节 “xx/” 目录占位对象除外，见下一条用例）
             { key: 'a.txt', size: 12, etag: 'e1', last_modified: '2026-07-01T00:00:00Z' },
           ],
-          { cursor: 'next-1', per_page: 100 },
+          { cursor: 'next-1', per_page: 100, delimited: ['docs/'] },
         ),
       );
     };
@@ -98,6 +99,25 @@ describe('CfClient R2 objects', () => {
     expect(r.objects).toEqual([
       { key: 'docs/', size: null, etag: null, last_modified: null, is_prefix: true },
       { key: 'a.txt', size: 12, etag: 'e1', last_modified: '2026-07-01T00:00:00Z', is_prefix: false },
+    ]);
+  });
+
+  it('listR2Objects dedupes zero-byte folder marker objects against delimited prefixes', async () => {
+    const fetchImpl: typeof fetch = async () =>
+      jsonResponse(
+        envelope(
+          [
+            { key: 'docs/', size: 0 }, // 目录占位对象（无 etag）与 delimited 里的同名前缀
+            { key: 'b.txt', size: 1, etag: 'e2', last_modified: '2026-07-02T00:00:00Z' },
+          ],
+          { delimited: ['docs/', 'img/'] },
+        ),
+      );
+    const r = await new CfClient('tok', fetchImpl).listR2Objects('cf-1', 'b1');
+    expect(r.objects).toEqual([
+      { key: 'docs/', size: null, etag: null, last_modified: null, is_prefix: true },
+      { key: 'img/', size: null, etag: null, last_modified: null, is_prefix: true },
+      { key: 'b.txt', size: 1, etag: 'e2', last_modified: '2026-07-02T00:00:00Z', is_prefix: false },
     ]);
   });
 

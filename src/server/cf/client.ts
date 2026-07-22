@@ -1111,18 +1111,33 @@ export class CfClient {
         ...(opts.prefix ? { prefix: opts.prefix } : {}),
         ...(opts.cursor ? { cursor: opts.cursor } : {}),
       });
-      const objects = page.getPaginatedItems().map((o) => {
-        const key = o.key ?? '';
-        const isPrefix = key.endsWith('/') && !o.etag;
-        return {
-          key,
-          size: isPrefix ? null : (o.size ?? null),
-          etag: isPrefix ? null : (o.etag ?? null),
-          last_modified: isPrefix ? null : (o.last_modified ?? null),
-          is_prefix: isPrefix,
-        };
-      });
-      return { objects, cursor: page.nextPageParams()?.cursor ?? null };
+      // delimiter 命中的“文件夹”前缀不在 result 数组里，而在 result_info.delimited
+      //（T14 真机实证；SDK CursorPagination 类型未声明该字段）——漏读会让全是文件夹的桶显示为空
+      const info = (page as unknown as { result_info?: { delimited?: string[] } }).result_info;
+      const prefixes: CfR2Object[] = (info?.delimited ?? []).map((p) => ({
+        key: p,
+        size: null,
+        etag: null,
+        last_modified: null,
+        is_prefix: true,
+      }));
+      const prefixKeys = new Set(prefixes.map((p) => p.key));
+      const objects = page
+        .getPaginatedItems()
+        .map((o) => {
+          const key = o.key ?? '';
+          // 零字节 “xx/” 目录占位对象仍会出现在 result 里，按前缀对待并与 delimited 去重
+          const isPrefix = key.endsWith('/') && !o.etag;
+          return {
+            key,
+            size: isPrefix ? null : (o.size ?? null),
+            etag: isPrefix ? null : (o.etag ?? null),
+            last_modified: isPrefix ? null : (o.last_modified ?? null),
+            is_prefix: isPrefix,
+          };
+        })
+        .filter((o) => !(o.is_prefix && prefixKeys.has(o.key)));
+      return { objects: [...prefixes, ...objects], cursor: page.nextPageParams()?.cursor ?? null };
     });
   }
 
