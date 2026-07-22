@@ -10,9 +10,14 @@ const EXPIRES_SECONDS = 900;
 
 export const POST: APIRoute = async ({ params, locals, request }) => {
   const { db, key, userEmail } = await appContext(locals);
-  const body = (await request.json().catch(() => null)) as { key?: unknown; op?: unknown } | null;
+  const body = (await request.json().catch(() => null)) as {
+    key?: unknown;
+    op?: unknown;
+    download?: unknown;
+  } | null;
   const objectKey = typeof body?.key === 'string' ? body.key : '';
   const op = body?.op === 'get' || body?.op === 'put' ? body.op : null;
+  const download = body?.download === true;
   if (objectKey === '' || !op) return jsonError('key and op (get|put) are required', 400);
   const cfAccountId = new URL(request.url).searchParams.get('cfAccountId') ?? undefined;
   const bucket = await getCachedR2Bucket(db, userEmail, params.accountId!, params.bucket!, cfAccountId);
@@ -28,6 +33,7 @@ export const POST: APIRoute = async ({ params, locals, request }) => {
       key: objectKey,
       method: op === 'get' ? 'GET' : 'PUT',
       expiresSeconds: EXPIRES_SECONDS,
+      ...(download && op === 'get' ? { downloadFilename: objectKey.split('/').pop() || objectKey } : {}),
     });
     return Response.json({ url, expiresAt: new Date(Date.now() + EXPIRES_SECONDS * 1000).toISOString() });
   } catch (e) {
