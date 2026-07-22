@@ -14,11 +14,9 @@ const nav = [
   { href: localizePath(locale, '/accounts'), label: t(locale, 'nav.accounts'), Icon: Users },
   { href: localizePath(locale, '/zones'), label: t(locale, 'nav.zones'), Icon: Globe },
   { href: localizePath(locale, '/workers'), label: t(locale, 'nav.workersPages'), Icon: Workflow },
+  { href: localizePath(locale, '/r2'), label: t(locale, 'nav.r2'), Icon: Database },
   { href: localizePath(locale, '/usage'), label: t(locale, 'nav.usage'), Icon: BarChart3 },
   { href: localizePath(locale, '/email'), label: t(locale, 'nav.email'), Icon: Mail },
-];
-const upcoming = [
-  { label: t(locale, 'nav.storage'), Icon: Database },
 ];
 const LOCALE_LABELS: Record<Locale, string> = { zh: '中文', en: 'English' };
 const userEmail = Astro.locals.userEmail;
@@ -134,17 +132,6 @@ function isActive(href: string): boolean {
                     <Icon size={16} strokeWidth={1.75} />
                     {label}
                   </a>
-                </li>
-              ))}
-            </ul>
-            <div class="mt-4 border-t border-base-300 px-3 pt-3 text-xs opacity-40">{t(locale, 'nav.upcoming')}</div>
-            <ul class="menu w-full gap-0.5 p-0 opacity-40">
-              {upcoming.map(({ label, Icon }) => (
-                <li>
-                  <span class="cursor-not-allowed px-3 py-1.5">
-                    <Icon size={16} strokeWidth={1.75} />
-                    {label}
-                  </span>
                 </li>
               ))}
             </ul>
