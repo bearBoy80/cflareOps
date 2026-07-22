@@ -93,12 +93,14 @@ Minimum read scopes:
 
 - Zones / DNS: `Zone: Read`, `DNS: Edit`
 - Workers & Pages: `Account Settings: Read`, `Workers Scripts: Read`, `Cloudflare Pages: Read`
-- Usage: `Account Analytics: Read`
+- R2 (bucket/object browsing, preview, presigned download): `Workers R2 Storage: Read`
+- Usage (incl. R2 bucket usage charts): `Account Analytics: Read`
 
 Write actions need the matching edit scopes:
 
 - Pages write actions: `Cloudflare Pages: Edit`
 - Workers write actions: `Workers Scripts: Edit`
+- R2 write actions (upload, delete objects, create/delete buckets, settings): `Workers R2 Storage: Edit`
 
 Missing edit scopes should only fail the specific write action with 403; read-only views should continue to work.
 

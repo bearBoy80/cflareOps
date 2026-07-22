@@ -2,7 +2,7 @@
 
 [English](./README.md) | **简体中文** | [FAQ](./FAQ.zh-CN.md)
 
-一个自托管的 **Cloudflare 多账号汇总管理平台**。在一个界面里聚合管理你名下所有账号的 Zones、DNS、Workers、Pages 与用量分析，通过 Cloudflare Access 认证。
+一个自托管的 **Cloudflare 多账号汇总管理平台**。在一个界面里聚合管理你名下所有账号的 Zones、DNS、Workers、Pages、R2 存储与用量分析，通过 Cloudflare Access 认证。
 
 技术栈为 Astro 5 + React + DaisyUI，部署于 Cloudflare Pages + D1。界面支持中英双语（页头右上角下拉切换，cookie 记忆，默认按浏览器语言）。
 
@@ -13,6 +13,7 @@
 - **Zones 与 DNS 管理** —— 跨账号同步 Zones，按域名/状态/账号过滤，查看 Zone 元数据，并通过 Cloudflare API 创建、更新、删除 DNS 记录。
 - **Workers 管理** —— 聚合查看多账号脚本，查看绑定/配置/版本/部署历史，支持单模块源码查看与编辑，并在 Token 具备写权限时管理 cron、secrets、workers.dev URL 与自定义域。
 - **Pages 管理** —— 浏览 Pages 项目，查看部署/日志/域名，触发部署、重试/回滚部署、清理构建缓存，并可挂载自定义域及按需创建 DNS 记录。
+- **R2 存储管理** —— 跨账号同步存储桶，支持建桶/删桶；对象浏览器带文件夹导航与分页，上传下载走预签名 S3 URL 浏览器直连（零服务器中转），下载为强制附件。对象可应用内预览——图片、文本/代码、Markdown（sandbox 隔离渲染）、PDF、视频/音频，文本类经服务端中转、上限 1 MB。桶设置涵盖公开访问（r2.dev 与自定义域）、CORS、生命周期规则，每个桶还有存储量与 A/B 类操作用量图表。
 - **用量分析** —— Workers 与 Pages Functions 调用统计，支持近 24 小时逐时快照、7 天/30 天自然日快照、表格搜索、账号过滤与趋势图。
 - **邮件发送** —— 配置已验证的发送域名，底层可选 [Resend](https://resend.com/)（存储 API Key）或 Cloudflare Email Sending（复用已有账号 Token），即可在后台撰写并发送邮件。正文支持 Markdown / HTML / 纯文本并带实时预览；每次发送（成功或失败）都会写入可审计的记录，随后可查看并按原文重新渲染。
 - **Cloudflare Access 登录认证** —— 使用 Cloudflare Access 保护后台，每个请求校验 `Cf-Access-Jwt-Assertion` JWT，并将认证邮箱作为用户数据隔离边界。
@@ -153,6 +154,7 @@
 - **可选 —— Pages 写操作**（部署重试/回滚、域名管理、触发部署、清缓存）：Account → Cloudflare Pages: **Edit**
 - **可选 —— Workers 写操作**（在线编辑部署、cron、secrets、自定义域）：Account → Workers Scripts: **Edit**
 - **可选 —— 用量页**（Workers/Pages Functions 调用数）：Account → Account Analytics: Read
+- **可选 —— R2 存储：** Account → Workers R2 Storage: Read 即可浏览桶/对象、预览与下载（预签名 S3 凭证由 Token 派生，传输同样受 Token 的 R2 权限约束）；上传、删除对象、建桶/删桶与设置修改需要 **Edit**。桶用量 tab 另需 Account Analytics: Read。
 - **可选 —— 通过 Cloudflare 发信**（仅当配置 Cloudflare 底层的发送域名时需要；Resend 域名用独立的 API Key，无需 Cloudflare 权限）：Account → Email Sending: Edit。且该域名需先在你的 Cloudflare 账号中完成发送验证。
 
 说明：
@@ -183,9 +185,9 @@
 
 ```
 src/
-  components/   React island 面板（Accounts、Zones、DNS、Workers、Pages、Usage、Email、Dashboard）
+  components/   React island 面板（Accounts、Zones、DNS、Workers、Pages、R2、Usage、Email、Dashboard）
   pages/        Astro 路由 + API 端点（src/pages/api）
-  server/       服务端服务（usage、sync、email 等）
+  server/       服务端服务（usage、sync、r2、email 等）
   lib/          共享工具（Cloudflare 客户端、加密 ...）
   i18n/         中英文案
   middleware.ts Access 认证

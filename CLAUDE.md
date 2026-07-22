@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-cloudflareOps — a self-hosted dashboard to manage **multiple Cloudflare accounts** (Zones, DNS, Workers, Pages, usage analytics) from one place. Astro 5 SSR + React 19 islands on Cloudflare Pages, D1 (SQLite) for storage, Cloudflare Access (Zero Trust) for auth. Bilingual UI (zh default / en).
+cloudflareOps — a self-hosted dashboard to manage **multiple Cloudflare accounts** (Zones, DNS, Workers, Pages, R2 storage, usage analytics) from one place. Astro 5 SSR + React 19 islands on Cloudflare Pages, D1 (SQLite) for storage, Cloudflare Access (Zero Trust) for auth. Bilingual UI (zh default / en).
 
 ## Commands
 
@@ -45,6 +45,8 @@ First-time local setup: `npm install`, `cp wrangler.toml.example wrangler.toml`,
 
 **Cloudflare API access goes through `CfClient` only** (`src/server/cf/client.ts`). Business code must never `fetch` Cloudflare directly. `CfClient` wraps the official `cloudflare` SDK and normalizes errors into `CfApiError` (status + messages). Two escape hatches inside the class for endpoints the SDK doesn't cover cleanly: `raw()`/`rawEnvelope()` (v4 REST envelope) and `graphql()` (Analytics API). The file is heavily commented with SDK gotchas (e.g. `scripts.settings` vs `scripts.scriptAndVersionSettings` map to *opposite* URL paths; `/pages/projects` rejects explicit `per_page`; workerd `fetch` needs `this` bound to `globalThis`). Read those comments before changing client methods.
 
+**R2 has one sanctioned exception to the CfClient boundary.** Bucket/object/settings/usage calls go through `CfClient` like everything else, but object transfers are browser-direct via presigned S3 URLs built in `src/server/r2Presign.ts` — the **only** file allowed to reference `*.r2.cloudflarestorage.com`. S3 credentials are derived per request from the account token (accessKeyId = `verifyToken().id`, secret = SHA-256 hex of the token) and are never stored or logged. Adding `downloadFilename` appends a `response-content-disposition=attachment` query param **before signing** → true attachment download. Object preview is a hybrid channel: media kinds (image/pdf/video/audio) load presigned GET URLs directly in tags (tag loads are CORS-exempt, so bucket CORS config is not required); text/markdown go through `GET .../content`, which relays ≤1 MB via `CfClient.getR2ObjectContent` (over limit → 413 with code `objectTooLarge`); markdown renders only inside a sandbox iframe (`sandbox=""` + srcDoc — same anti-XSS pattern as `EmailPreview`). R2 SDK gotchas: objects list with `delimiter='/'` returns folder prefixes in `result_info.delimited` (undeclared in SDK types), not in the result array; object keys must be per-segment encoded via `encodeR2ObjectKey` (the SDK splices keys into URLs raw).
+
 **Secrets (API tokens) are encrypted at rest** with AES-GCM (`src/server/crypto.ts`). `ENCRYPTION_KEY` is 64 hex chars (256-bit). Stored format is `base64(iv).base64(ciphertext)`. Tokens are also de-duplicated per user via `token_hash` (SHA-256). Never log or return decrypted tokens.
 
 **Sync = cache-fill pattern.** `syncWorkersPages` (`src/server/workersPages.ts`) and the zones sync fan out across a user's accounts with `p-limit` concurrency (3). Each account's refresh is an **atomic batch**: collect `DELETE ... WHERE account_id=?` + all `INSERT`s, then run them in one D1 `batch()`. If any upstream fetch throws first, the batch never runs and the old cache is preserved (no partial-delete). Per-account failures are collected and reported, not fatal — one bad token doesn't block other accounts.
@@ -67,10 +69,12 @@ src/
     cf/types.ts          normalized Cf* shapes
     db/accounts.ts       account repo (all owner_email-scoped)
     workersPages.ts      Workers/Pages sync + cache reads
-    zones.ts, usage.ts   same pattern for zones and analytics
+    zones.ts, usage.ts, r2.ts  same pattern for zones, analytics, and R2 buckets
+    r2Presign.ts         presigned S3 URL builder (the only *.r2.cloudflarestorage.com site)
   pages/                 Astro routes + src/pages/api/** endpoints (file-based)
   pages/en/**            English mirror of the localized routes
   components/            React island panels (one per feature) + components/ui/**
+  lib/                   shared pure helpers (previewKind, withCf, triggerDownload, formatBytes, ...)
   i18n/                  LOCALES, string tables, locale middleware/routing
 migrations/              D1 SQL (NNNN_description.sql)
 tests/unit/**            Vitest; tests/helpers/d1.ts is the D1 test double
@@ -82,7 +86,7 @@ Tests run under Node (not workerd). `tests/helpers/d1.ts` `createTestDb()` build
 
 ## Conventions
 
-- **CfClient is the boundary.** No direct `fetch` to `api.cloudflare.com` outside `src/server/cf/client.ts`.
+- **CfClient is the boundary.** No direct `fetch` to `api.cloudflare.com` outside `src/server/cf/client.ts`. The single S3 exception: `*.r2.cloudflarestorage.com` may appear only in `src/server/r2Presign.ts`.
 - **Imports use path aliases, never parent-relative paths.** `@/*` → `src/*`, `@tests/*` → `tests/*`, defined in `tsconfig.json` `paths` and mirrored in `vitest.config.ts` `resolve.alias` (Astro reads tsconfig aliases natively; Vitest does not). Same-directory `./` imports are fine.
 - **Scope every user-data query by `owner_email`.**
 - **API errors:** throw `ConfigError`/`NotFoundError`/`CfApiError`; let the middleware boundary or `handleCfError` map them. Give new config failures a stable `code` so the frontend can localize a diagnostic.
@@ -120,6 +124,10 @@ Tests run under Node (not workerd). `tests/helpers/d1.ts` `createTestDb()` build
 
 10. Tab 内容一律**全宽垂直堆叠**，禁止两列网格（用户明确偏好）；tab 状态走 URL `?tab=`（复用 `src/components/ui/DetailTabs.tsx` + `useDetailTab`，astro 页面服务端读 searchParams 传 `initialTab` 防 hydration mismatch）。
 
+### 模态框
+
+11. 大内容模态（R2 对象预览 PreviewModal 模式）：手机端全屏（`h-full w-full max-w-full rounded-none`），≥sm 恢复 `sm:h-[85vh] sm:w-[90vw] sm:rounded-2xl`；内容区 `min-h-0 flex-1 overflow-auto` 自身滚动，禁止撑破页面；Esc 与点遮罩均可关闭。
+
 ### 验收标准
 
-11. 每次 UI 改动的移动端验收：**500px 视口下 `document.scrollingElement.scrollWidth === window.innerWidth`（零整页横滚）**，逐页检查；1440px 桌面回归无视觉变化。
+12. 每次 UI 改动的移动端验收：**500px 视口下 `document.scrollingElement.scrollWidth === window.innerWidth`（零整页横滚）**，逐页检查；1440px 桌面回归无视觉变化。

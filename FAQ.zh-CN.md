@@ -93,12 +93,14 @@ Cloudflare workerd 没有 `MessageChannel`，所以生产构建必须使用 `rea
 
 - Zones / DNS：`Zone: Read`、`DNS: Edit`
 - Workers & Pages：`Account Settings: Read`、`Workers Scripts: Read`、`Cloudflare Pages: Read`
-- 用量页：`Account Analytics: Read`
+- R2（桶/对象浏览、预览、预签名下载）：`Workers R2 Storage: Read`
+- 用量页（含 R2 桶用量图表）：`Account Analytics: Read`
 
 写操作需要对应 Edit 权限：
 
 - Pages 写操作：`Cloudflare Pages: Edit`
 - Workers 写操作：`Workers Scripts: Edit`
+- R2 写操作（上传、删除对象、建桶/删桶、设置修改）：`Workers R2 Storage: Edit`
 
 缺少 Edit 权限时，应只让对应写操作返回 403；只读页面不应因此不可用。
 

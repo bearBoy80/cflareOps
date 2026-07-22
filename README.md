@@ -2,7 +2,7 @@
 
 **English** | [简体中文](./README.zh-CN.md) | [FAQ](./FAQ.md)
 
-A self-hosted dashboard for managing **multiple Cloudflare accounts** from one place. Aggregate Zones, DNS, Workers, Pages, and usage analytics across every account you own, behind Cloudflare Access authentication.
+A self-hosted dashboard for managing **multiple Cloudflare accounts** from one place. Aggregate Zones, DNS, Workers, Pages, R2 storage, and usage analytics across every account you own, behind Cloudflare Access authentication.
 
 Built with Astro 5 + React + DaisyUI, deployed on Cloudflare Pages + D1. The UI is bilingual (English / 简体中文) with a language switcher in the header — the choice is remembered via cookie and defaults to the browser language.
 
@@ -13,6 +13,7 @@ Built with Astro 5 + React + DaisyUI, deployed on Cloudflare Pages + D1. The UI 
 - **Zones & DNS management** — sync Zones across all accounts, filter by domain/status/account, inspect Zone metadata, and create/update/delete DNS records through the Cloudflare API.
 - **Workers management** — list scripts across accounts, inspect bindings/settings/history/deployments, view and edit single-module source, manage cron triggers, secrets, workers.dev URLs, and custom domains when the token has edit scope.
 - **Pages management** — browse Pages projects, inspect deployments/logs/domains, trigger deployments, retry/rollback deployments, purge build cache, and attach custom domains with optional DNS record creation.
+- **R2 storage management** — sync buckets across accounts, create/delete buckets, and browse objects with folder navigation and pagination. Uploads and downloads go browser-direct through presigned S3 URLs (no server relay); downloads are forced as real attachments. Objects preview in-app — images, text/code, Markdown (sandboxed), PDF, video/audio — with text previews server-relayed under a 1 MB cap. Bucket settings cover public access (r2.dev and custom domains), CORS, and lifecycle rules, and each bucket has storage / Class A+B operations charts.
 - **Usage analytics** — view Workers and Pages Functions invocation counts with 24h hourly snapshots, 7d/30d daily snapshots, searchable tables, account filters, and trend charts.
 - **Email sending** — configure verified sending domains backed by either [Resend](https://resend.com/) (stored API key) or Cloudflare Email Sending (reuses an existing account token), then compose and send mail from the dashboard. Bodies support Markdown / HTML / plain text with a live preview, and every send is written to an auditable log (success or failure) you can review and re-render later.
 - **Cloudflare Access login** — protect the dashboard with Cloudflare Access, verify the `Cf-Access-Jwt-Assertion` JWT on every request, and use the authenticated email as the per-user data boundary.
@@ -153,6 +154,7 @@ Create an API Token for each Cloudflare account you want to manage. Minimum scop
 - **Optional — Pages write** (retry/rollback deployments, domain management, trigger deploys, purge cache): Account → Cloudflare Pages: **Edit**
 - **Optional — Workers write** (in-browser edit/deploy, cron, secrets, custom domains): Account → Workers Scripts: **Edit**
 - **Optional — Usage page** (Workers/Pages Functions invocation counts): Account → Account Analytics: Read
+- **Optional — R2 storage:** Account → Workers R2 Storage: Read is enough to browse buckets/objects, preview, and download (presigned S3 credentials are derived from the token, so its R2 scope applies to transfers too); uploads, object deletion, bucket create/delete, and settings changes need **Edit**. The bucket usage tab additionally uses Account Analytics: Read.
 - **Optional — Email sending via Cloudflare** (only if you configure a Cloudflare-backed sending domain; Resend domains use a separate API key and need no Cloudflare scope): Account → Email Sending: Edit. The domain must also be verified for sending in your Cloudflare account first.
 
 Notes:
@@ -183,9 +185,9 @@ Commands are shown with `npm run` because they are package scripts; `pnpm run <s
 
 ```
 src/
-  components/   React island panels (Accounts, Zones, DNS, Workers, Pages, Usage, Email, Dashboard)
+  components/   React island panels (Accounts, Zones, DNS, Workers, Pages, R2, Usage, Email, Dashboard)
   pages/        Astro routes + API endpoints (src/pages/api)
-  server/       Server-side services (usage, sync, email, etc.)
+  server/       Server-side services (usage, sync, r2, email, etc.)
   lib/          Shared utilities (Cloudflare client, crypto, ...)
   i18n/         Bilingual strings
   middleware.ts Access authentication
