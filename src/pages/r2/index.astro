@@ -1,0 +1,10 @@
+---
+import MainLayout from '@/layouts/MainLayout.astro';
+import R2Panel from '@/components/R2Panel';
+import { t } from '@/i18n';
+import { localeFromPath } from '@/i18n/routing';
+const locale = localeFromPath(Astro.url.pathname);
+---
+<MainLayout title={t(locale, 'r2.pageTitle')} locale={locale}>
+  <R2Panel client:load locale={locale} />
+</MainLayout>
