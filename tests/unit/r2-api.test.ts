@@ -1,5 +1,6 @@
 import { createTestDb } from '@tests/helpers/d1';
 import { describe, expect, it } from 'vitest';
+import { GET as contentGet } from '@/pages/api/r2/[accountId]/[bucket]/content';
 import { GET as objectsGet } from '@/pages/api/r2/[accountId]/[bucket]/objects';
 import { POST as presignPost } from '@/pages/api/r2/[accountId]/[bucket]/presign';
 import { GET as bucketsGet, POST as bucketsPost } from '@/pages/api/r2/buckets';
@@ -91,5 +92,25 @@ describe('bucket ownership guard', () => {
       ),
     );
     expect(res.status).toBe(400);
+  });
+});
+
+describe('GET /api/r2/:accountId/:bucket/content', () => {
+  it('400s on an empty key before touching CF', async () => {
+    const db = createTestDb();
+    await seed(db);
+    const res = await contentGet(
+      ctx(db, 'http://localhost/api/r2/a1/b1/content', undefined, { accountId: 'a1', bucket: 'b1' }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('404s for a bucket outside the owner scope', async () => {
+    const db = createTestDb();
+    await seed(db);
+    const res = await contentGet(
+      ctx(db, 'http://localhost/api/r2/a1/nope/content?key=a.txt', undefined, { accountId: 'a1', bucket: 'nope' }),
+    );
+    expect(res.status).toBe(404);
   });
 });
