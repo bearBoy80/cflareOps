@@ -1,9 +1,11 @@
 import { File, Folder, Upload } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import PreviewModal from '@/components/r2/PreviewModal';
 import { useConfirm } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/ui/ToastProvider';
 import { type Locale, t } from '@/i18n';
 import { formatBytes } from '@/lib/formatBytes';
+import { previewKind } from '@/lib/previewKind';
 import { relativeTime } from '@/lib/time';
 
 interface R2Object {
@@ -36,6 +38,7 @@ export default function ObjectsTab({
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
+  const [preview, setPreview] = useState<{ key: string; size: number | null } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const { showToast } = useToast();
   const confirm = useConfirm();
@@ -89,7 +92,7 @@ export default function ObjectsTab({
       const res = await fetch(withCf(`${apiBase}/presign`, cfAccountId), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: obj.key, op: 'get' }),
+        body: JSON.stringify({ key: obj.key, op: 'get', download: true }),
       });
       if (!res.ok) {
         showToast(res.status === 403 ? t(locale, 'r2.forbiddenHint') : t(locale, 'common.requestFailed'), 'error');
@@ -258,10 +261,18 @@ export default function ObjectsTab({
                 ) : (
                   <tr key={obj.key}>
                     <td>
-                      <span className="inline-flex min-w-0 items-center gap-2 font-mono">
+                      <button
+                        type="button"
+                        className="link-hover inline-flex min-w-0 items-center gap-2 text-left font-mono hover:text-primary"
+                        title={t(locale, 'r2.preview')}
+                        onClick={() => {
+                          if (previewKind(obj.key)) setPreview({ key: obj.key, size: obj.size });
+                          else void download(obj);
+                        }}
+                      >
                         <File size={14} strokeWidth={1.75} className="shrink-0 opacity-40" />
                         <span className="min-w-0 break-all">{obj.key.slice(prefix.length)}</span>
-                      </span>
+                      </button>
                     </td>
                     <td className="hidden sm:table-cell">
                       <span className="font-mono text-xs">{formatBytes(obj.size)}</span>
@@ -309,6 +320,17 @@ export default function ObjectsTab({
             {t(locale, 'r2.loadMore')}
           </button>
         </div>
+      )}
+
+      {preview && (
+        <PreviewModal
+          key={preview.key}
+          locale={locale}
+          apiBase={apiBase}
+          cfAccountId={cfAccountId}
+          object={preview}
+          onClose={() => setPreview(null)}
+        />
       )}
     </div>
   );
