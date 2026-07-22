@@ -28,6 +28,10 @@ interface LifecycleRule {
   prefix: string;
   deleteAfterDays: number | null;
   iaAfterDays: number | null;
+  abortMultipartDays: number | null;
+  /** 含非 Age 条件（如固定日期）：表单只读，保存时后端按 raw 原样透传 */
+  unsupported?: boolean;
+  raw?: unknown;
 }
 
 const METHODS = ['GET', 'PUT', 'POST', 'DELETE', 'HEAD'] as const;
@@ -224,8 +228,6 @@ export default function SettingsTab({
   if (loading) return <div className="skeleton h-40 w-full" />;
   if (error) return <div className="alert alert-warning text-sm">{error}</div>;
 
-  const hasDateOnlyRule = lifecycleRules.some((r) => r.deleteAfterDays === null && r.iaAfterDays === null);
-
   return (
     <div className="flex flex-col gap-4">
       <Card title={t(locale, 'r2.settingsPublic')}>
@@ -383,7 +385,7 @@ export default function SettingsTab({
       <Card title={t(locale, 'r2.settingsLifecycle')}>
         <div className="flex flex-col gap-3">
           {lifecycleRules.map((rule, i) => {
-            const dateOnly = rule.deleteAfterDays === null && rule.iaAfterDays === null;
+            const locked = rule.unsupported === true;
             return (
               <div
                 key={rule.id}
@@ -398,7 +400,7 @@ export default function SettingsTab({
                     type="text"
                     className="input input-bordered input-sm w-full font-mono"
                     value={rule.prefix}
-                    disabled={dateOnly}
+                    disabled={locked}
                     onChange={(e) => updateLifecycle(i, { prefix: e.target.value })}
                   />
                 </div>
@@ -411,7 +413,7 @@ export default function SettingsTab({
                     type="number"
                     className="input input-bordered input-sm w-full"
                     value={rule.deleteAfterDays ?? ''}
-                    disabled={dateOnly}
+                    disabled={locked}
                     onChange={(e) =>
                       updateLifecycle(i, { deleteAfterDays: e.target.value === '' ? null : Number(e.target.value) })
                     }
@@ -426,9 +428,24 @@ export default function SettingsTab({
                     type="number"
                     className="input input-bordered input-sm w-full"
                     value={rule.iaAfterDays ?? ''}
-                    disabled={dateOnly}
+                    disabled={locked}
                     onChange={(e) =>
                       updateLifecycle(i, { iaAfterDays: e.target.value === '' ? null : Number(e.target.value) })
+                    }
+                  />
+                </div>
+                <div className="w-full sm:w-40">
+                  <label className="text-xs opacity-60" htmlFor={`lifecycle-abort-${rule.id}`}>
+                    {t(locale, 'r2.lifecycleAbortDays')}
+                  </label>
+                  <input
+                    id={`lifecycle-abort-${rule.id}`}
+                    type="number"
+                    className="input input-bordered input-sm w-full"
+                    value={rule.abortMultipartDays ?? ''}
+                    disabled={locked}
+                    onChange={(e) =>
+                      updateLifecycle(i, { abortMultipartDays: e.target.value === '' ? null : Number(e.target.value) })
                     }
                   />
                 </div>
@@ -441,7 +458,7 @@ export default function SettingsTab({
                   />
                   <span className="whitespace-nowrap text-xs">{t(locale, 'r2.lifecycleEnabled')}</span>
                 </label>
-                {dateOnly && (
+                {locked && (
                   <span className="badge badge-warning badge-sm shrink-0 whitespace-nowrap">
                     {t(locale, 'r2.lifecycleDateRuleHint')}
                   </span>
@@ -461,7 +478,14 @@ export default function SettingsTab({
               onClick={() =>
                 setLifecycleRules((rules) => [
                   ...rules,
-                  { id: `rule-${Date.now()}`, enabled: true, prefix: '', deleteAfterDays: 30, iaAfterDays: null },
+                  {
+                    id: `rule-${Date.now()}`,
+                    enabled: true,
+                    prefix: '',
+                    deleteAfterDays: 30,
+                    iaAfterDays: null,
+                    abortMultipartDays: null,
+                  },
                 ])
               }
             >
@@ -470,8 +494,7 @@ export default function SettingsTab({
             </button>
             <button
               className="btn btn-primary btn-sm whitespace-nowrap"
-              disabled={lifecycleBusy || hasDateOnlyRule}
-              title={hasDateOnlyRule ? t(locale, 'r2.lifecycleDateRuleHint') : undefined}
+              disabled={lifecycleBusy}
               onClick={() => void saveLifecycle()}
             >
               {t(locale, 'r2.lifecycleSave')}

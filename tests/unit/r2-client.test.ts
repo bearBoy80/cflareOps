@@ -366,7 +366,13 @@ describe('CfClient R2 settings', () => {
     expect(r.enabled).toBe(true);
   });
 
-  it('lifecycle: GET maps Age conditions to days, PUT builds SDK rules from days', async () => {
+  it('lifecycle: GET maps Age conditions (incl. multipart abort) to days, PUT builds SDK rules from days', async () => {
+    const dateRule = {
+      id: 'r2',
+      enabled: false,
+      conditions: { prefix: '' },
+      deleteObjectsTransition: { condition: { type: 'Date', date: '2027-01-01' } },
+    };
     const getImpl: typeof fetch = async () =>
       jsonResponse(
         envelope({
@@ -379,20 +385,25 @@ describe('CfClient R2 settings', () => {
               storageClassTransitions: [
                 { storageClass: 'InfrequentAccess', condition: { type: 'Age', maxAge: 86400 } },
               ],
+              abortMultipartUploadsTransition: { condition: { type: 'Age', maxAge: 259200 } },
             },
-            {
-              id: 'r2',
-              enabled: false,
-              conditions: { prefix: '' },
-              deleteObjectsTransition: { condition: { type: 'Date', date: '2027-01-01' } },
-            },
+            dateRule,
           ],
         }),
       );
     const rules = await new CfClient('tok', getImpl).getR2Lifecycle('cf-1', 'b1');
     expect(rules).toEqual([
-      { id: 'r1', enabled: true, prefix: 'tmp/', deleteAfterDays: 7, iaAfterDays: 1 },
-      { id: 'r2', enabled: false, prefix: '', deleteAfterDays: null, iaAfterDays: null },
+      { id: 'r1', enabled: true, prefix: 'tmp/', deleteAfterDays: 7, iaAfterDays: 1, abortMultipartDays: 3 },
+      {
+        id: 'r2',
+        enabled: false,
+        prefix: '',
+        deleteAfterDays: null,
+        iaAfterDays: null,
+        abortMultipartDays: null,
+        unsupported: true,
+        raw: dateRule,
+      },
     ]);
 
     let seenBody = '';
@@ -401,7 +412,17 @@ describe('CfClient R2 settings', () => {
       return jsonResponse(envelope({}));
     };
     await new CfClient('tok', putImpl).putR2Lifecycle('cf-1', 'b1', [
-      { id: 'r1', enabled: true, prefix: 'tmp/', deleteAfterDays: 7, iaAfterDays: null },
+      { id: 'r1', enabled: true, prefix: 'tmp/', deleteAfterDays: 7, iaAfterDays: null, abortMultipartDays: 3 },
+      {
+        id: 'r2',
+        enabled: true, // 开关翻转要落到 raw 上
+        prefix: '',
+        deleteAfterDays: null,
+        iaAfterDays: null,
+        abortMultipartDays: null,
+        unsupported: true,
+        raw: dateRule,
+      },
     ]);
     expect(JSON.parse(seenBody)).toEqual({
       rules: [
@@ -410,7 +431,9 @@ describe('CfClient R2 settings', () => {
           enabled: true,
           conditions: { prefix: 'tmp/' },
           deleteObjectsTransition: { condition: { type: 'Age', maxAge: 604800 } },
+          abortMultipartUploadsTransition: { condition: { type: 'Age', maxAge: 259200 } },
         },
+        { ...dateRule, enabled: true },
       ],
     });
   });

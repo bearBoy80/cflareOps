@@ -192,11 +192,18 @@ export interface CfR2ManagedDomain {
   enabled: boolean;
 }
 
-/** 简化生命周期规则：只支持 Age 条件（天）；Date 条件读出为 null，不可编辑（v1 约定） */
+/**
+ * 简化生命周期规则：Age 条件（天）可编辑；含非 Age 条件（如固定日期）的规则
+ * 标记 unsupported 并携带 raw（原始 SDK JSON），保存时原样透传，不在表单中编辑。
+ */
 export interface CfR2LifecycleRule {
   id: string;
   enabled: boolean;
   prefix: string;
   deleteAfterDays: number | null;
   iaAfterDays: number | null;
+  /** 未完成分段上传中止（天）；R2 默认规则 "Default Multipart Abort Rule" 即此类 */
+  abortMultipartDays: number | null;
+  unsupported?: boolean;
+  raw?: unknown;
 }

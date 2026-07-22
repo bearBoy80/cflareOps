@@ -1384,7 +1384,11 @@ export class CfClient {
     });
   }
 
-  /** 生命周期规则 → 简化形（Age 条件秒 → 天；Date 条件不支持编辑，读出为 null） */
+  /**
+   * 生命周期规则 → 简化形（Age 条件秒 → 天，含分段上传中止）。
+   * 任一 transition 用了非 Age 条件（如固定日期）的规则标记 unsupported 并携带原始 JSON，
+   * 表单只读、保存时原样透传——不能因为一条特殊规则锁死整组编辑。
+   */
   getR2Lifecycle(cfAccountId: string, bucket: string): Promise<CfR2LifecycleRule[]> {
     return this.wrap(async () => {
       const r = await this.sdk.r2.buckets.lifecycle.get(bucket, { account_id: cfAccountId });
@@ -1392,41 +1396,77 @@ export class CfClient {
         const cond = c as { type?: string; maxAge?: number } | undefined;
         return cond?.type === 'Age' && typeof cond.maxAge === 'number' ? Math.round(cond.maxAge / 86400) : null;
       };
-      return (r.rules ?? []).map((rule) => ({
-        id: rule.id,
-        enabled: rule.enabled,
-        prefix: rule.conditions?.prefix ?? '',
-        deleteAfterDays: ageDays(rule.deleteObjectsTransition?.condition),
-        iaAfterDays: ageDays(
-          rule.storageClassTransitions?.find((t) => t.storageClass === 'InfrequentAccess')?.condition,
-        ),
-      }));
+      const isAgeOrAbsent = (c: unknown) => c === undefined || (c as { type?: string } | null)?.type === 'Age';
+      return (r.rules ?? []).map((rule) => {
+        const base = { id: rule.id, enabled: rule.enabled, prefix: rule.conditions?.prefix ?? '' };
+        const supported =
+          isAgeOrAbsent(rule.deleteObjectsTransition?.condition) &&
+          isAgeOrAbsent(rule.abortMultipartUploadsTransition?.condition) &&
+          (rule.storageClassTransitions ?? []).every((t) => isAgeOrAbsent(t.condition));
+        if (!supported) {
+          return {
+            ...base,
+            deleteAfterDays: null,
+            iaAfterDays: null,
+            abortMultipartDays: null,
+            unsupported: true,
+            raw: rule,
+          };
+        }
+        return {
+          ...base,
+          deleteAfterDays: ageDays(rule.deleteObjectsTransition?.condition),
+          iaAfterDays: ageDays(
+            rule.storageClassTransitions?.find((t) => t.storageClass === 'InfrequentAccess')?.condition,
+          ),
+          abortMultipartDays: ageDays(rule.abortMultipartUploadsTransition?.condition),
+        };
+      });
     });
   }
 
-  /** 整组替换生命周期规则（天 → Age 秒）；null 天数字段不生成对应 transition */
+  /**
+   * 整组替换生命周期规则（天 → Age 秒）；null 天数字段不生成对应 transition；
+   * unsupported 规则用 raw 原样回传（仅允许覆盖 enabled 开关）。
+   */
   putR2Lifecycle(cfAccountId: string, bucket: string, rules: CfR2LifecycleRule[]): Promise<void> {
     return this.wrap(async () => {
       await this.sdk.r2.buckets.lifecycle.update(bucket, {
         account_id: cfAccountId,
-        rules: rules.map((rule) => ({
-          id: rule.id,
-          enabled: rule.enabled,
-          conditions: { prefix: rule.prefix },
-          ...(rule.deleteAfterDays !== null
-            ? { deleteObjectsTransition: { condition: { type: 'Age' as const, maxAge: rule.deleteAfterDays * 86400 } } }
-            : {}),
-          ...(rule.iaAfterDays !== null
-            ? {
-                storageClassTransitions: [
-                  {
-                    storageClass: 'InfrequentAccess' as const,
-                    condition: { type: 'Age' as const, maxAge: rule.iaAfterDays * 86400 },
+        rules: rules.map((rule) => {
+          if (rule.unsupported && rule.raw) {
+            return { ...(rule.raw as Record<string, unknown>), enabled: rule.enabled } as never;
+          }
+          return {
+            id: rule.id,
+            enabled: rule.enabled,
+            conditions: { prefix: rule.prefix },
+            ...(rule.deleteAfterDays !== null
+              ? {
+                  deleteObjectsTransition: {
+                    condition: { type: 'Age' as const, maxAge: rule.deleteAfterDays * 86400 },
                   },
-                ],
-              }
-            : {}),
-        })),
+                }
+              : {}),
+            ...(rule.iaAfterDays !== null
+              ? {
+                  storageClassTransitions: [
+                    {
+                      storageClass: 'InfrequentAccess' as const,
+                      condition: { type: 'Age' as const, maxAge: rule.iaAfterDays * 86400 },
+                    },
+                  ],
+                }
+              : {}),
+            ...(typeof rule.abortMultipartDays === 'number'
+              ? {
+                  abortMultipartUploadsTransition: {
+                    condition: { type: 'Age' as const, maxAge: rule.abortMultipartDays * 86400 },
+                  },
+                }
+              : {}),
+          };
+        }),
       });
     });
   }
