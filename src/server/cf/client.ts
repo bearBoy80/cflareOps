@@ -7,6 +7,10 @@ import type {
   CfPagesDomain,
   CfPagesProject,
   CfR2Bucket,
+  CfR2CorsRule,
+  CfR2CustomDomain,
+  CfR2LifecycleRule,
+  CfR2ManagedDomain,
   CfR2Object,
   CfScriptSubdomain,
   CfTokenVerify,
@@ -1238,6 +1242,137 @@ export class CfClient {
         actionType: r.dimensions.actionType,
         requests: r.sum.requests,
       }));
+    });
+  }
+
+  /** 桶 CORS 规则；CF 对"从未配置过 CORS"的桶返回 404（10059），归一为 [] 而不是抛错 */
+  getR2Cors(cfAccountId: string, bucket: string): Promise<CfR2CorsRule[]> {
+    return this.wrap(async () => {
+      try {
+        const r = await this.sdk.r2.buckets.cors.get(bucket, { account_id: cfAccountId });
+        return (r.rules ?? []).map((rule) => ({
+          allowed: {
+            methods: rule.allowed.methods,
+            origins: rule.allowed.origins,
+            ...(rule.allowed.headers ? { headers: rule.allowed.headers } : {}),
+          },
+          ...(rule.id !== undefined ? { id: rule.id } : {}),
+          ...(rule.exposeHeaders !== undefined ? { exposeHeaders: rule.exposeHeaders } : {}),
+          ...(rule.maxAgeSeconds !== undefined ? { maxAgeSeconds: rule.maxAgeSeconds } : {}),
+        }));
+      } catch (e) {
+        if (e instanceof Cloudflare.APIError && e.status === 404) return [];
+        throw e;
+      }
+    });
+  }
+
+  /** 整组替换 CORS 规则；空数组语义 = 清除配置（设计文档约定，PUT [] 会被 CF 拒绝） */
+  putR2Cors(cfAccountId: string, bucket: string, rules: CfR2CorsRule[]): Promise<void> {
+    return this.wrap(async () => {
+      if (rules.length === 0) {
+        await this.sdk.r2.buckets.cors.delete(bucket, { account_id: cfAccountId });
+        return;
+      }
+      await this.sdk.r2.buckets.cors.update(bucket, { account_id: cfAccountId, rules: rules as never });
+    });
+  }
+
+  listR2CustomDomains(cfAccountId: string, bucket: string): Promise<CfR2CustomDomain[]> {
+    return this.wrap(async () => {
+      const r = await this.sdk.r2.buckets.domains.custom.list(bucket, { account_id: cfAccountId });
+      return (r.domains ?? []).map((d) => ({
+        domain: d.domain,
+        enabled: d.enabled,
+        ownershipStatus: d.status?.ownership ?? null,
+        sslStatus: d.status?.ssl ?? null,
+        zoneName: d.zoneName ?? null,
+      }));
+    });
+  }
+
+  /** 绑定自定义域（域名必须在同 CF 账号的 zone 内，zoneId 由路由层用 findZoneForHostname 解析） */
+  attachR2CustomDomain(
+    cfAccountId: string,
+    bucket: string,
+    opts: { domain: string; zoneId: string },
+  ): Promise<CfR2CustomDomain> {
+    return this.wrap(async () => {
+      const d = await this.sdk.r2.buckets.domains.custom.create(bucket, {
+        account_id: cfAccountId,
+        domain: opts.domain,
+        zoneId: opts.zoneId,
+        enabled: true,
+      });
+      return { domain: d.domain, enabled: d.enabled, ownershipStatus: null, sslStatus: null, zoneName: null };
+    });
+  }
+
+  detachR2CustomDomain(cfAccountId: string, bucket: string, domain: string): Promise<void> {
+    return this.wrap(async () => {
+      await this.sdk.r2.buckets.domains.custom.delete(bucket, domain, { account_id: cfAccountId });
+    });
+  }
+
+  /** r2.dev 托管域状态。SDK 命名陷阱：managed.list 实际是 GET 单对象（bucketId/domain/enabled），不是列表 */
+  getR2ManagedDomain(cfAccountId: string, bucket: string): Promise<CfR2ManagedDomain> {
+    return this.wrap(async () => {
+      const r = await this.sdk.r2.buckets.domains.managed.list(bucket, { account_id: cfAccountId });
+      return { domain: r.domain, enabled: r.enabled };
+    });
+  }
+
+  setR2ManagedDomain(cfAccountId: string, bucket: string, enabled: boolean): Promise<CfR2ManagedDomain> {
+    return this.wrap(async () => {
+      const r = await this.sdk.r2.buckets.domains.managed.update(bucket, { account_id: cfAccountId, enabled });
+      return { domain: r.domain, enabled: r.enabled };
+    });
+  }
+
+  /** 生命周期规则 → 简化形（Age 条件秒 → 天；Date 条件不支持编辑，读出为 null） */
+  getR2Lifecycle(cfAccountId: string, bucket: string): Promise<CfR2LifecycleRule[]> {
+    return this.wrap(async () => {
+      const r = await this.sdk.r2.buckets.lifecycle.get(bucket, { account_id: cfAccountId });
+      const ageDays = (c: unknown): number | null => {
+        const cond = c as { type?: string; maxAge?: number } | undefined;
+        return cond?.type === 'Age' && typeof cond.maxAge === 'number' ? Math.round(cond.maxAge / 86400) : null;
+      };
+      return (r.rules ?? []).map((rule) => ({
+        id: rule.id,
+        enabled: rule.enabled,
+        prefix: rule.conditions?.prefix ?? '',
+        deleteAfterDays: ageDays(rule.deleteObjectsTransition?.condition),
+        iaAfterDays: ageDays(
+          rule.storageClassTransitions?.find((t) => t.storageClass === 'InfrequentAccess')?.condition,
+        ),
+      }));
+    });
+  }
+
+  /** 整组替换生命周期规则（天 → Age 秒）；null 天数字段不生成对应 transition */
+  putR2Lifecycle(cfAccountId: string, bucket: string, rules: CfR2LifecycleRule[]): Promise<void> {
+    return this.wrap(async () => {
+      await this.sdk.r2.buckets.lifecycle.update(bucket, {
+        account_id: cfAccountId,
+        rules: rules.map((rule) => ({
+          id: rule.id,
+          enabled: rule.enabled,
+          conditions: { prefix: rule.prefix },
+          ...(rule.deleteAfterDays !== null
+            ? { deleteObjectsTransition: { condition: { type: 'Age' as const, maxAge: rule.deleteAfterDays * 86400 } } }
+            : {}),
+          ...(rule.iaAfterDays !== null
+            ? {
+                storageClassTransitions: [
+                  {
+                    storageClass: 'InfrequentAccess' as const,
+                    condition: { type: 'Age' as const, maxAge: rule.iaAfterDays * 86400 },
+                  },
+                ],
+              }
+            : {}),
+        })),
+      });
     });
   }
 }

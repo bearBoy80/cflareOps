@@ -208,3 +208,140 @@ describe('CfClient R2 GraphQL usage', () => {
     expect(await new CfClient('tok', fetchImpl).queryR2StorageSnapshot('cf-1')).toEqual([]);
   });
 });
+
+describe('CfClient R2 settings', () => {
+  it('getR2Cors maps rules and putR2Cors([]) issues a delete', async () => {
+    const getImpl: typeof fetch = async (input) => {
+      expect(String(input)).toContain('/accounts/cf-1/r2/buckets/b1/cors');
+      return jsonResponse(
+        envelope({
+          rules: [{ allowed: { methods: ['GET'], origins: ['https://a.dev'] }, maxAgeSeconds: 300 }],
+        }),
+      );
+    };
+    const rules = await new CfClient('tok', getImpl).getR2Cors('cf-1', 'b1');
+    expect(rules).toEqual([{ allowed: { methods: ['GET'], origins: ['https://a.dev'] }, maxAgeSeconds: 300 }]);
+
+    let seenMethod = '';
+    const delImpl: typeof fetch = async (_i, init) => {
+      seenMethod = (init?.method ?? '').toLowerCase();
+      return jsonResponse(envelope({}));
+    };
+    await new CfClient('tok', delImpl).putR2Cors('cf-1', 'b1', []);
+    expect(seenMethod).toBe('delete');
+  });
+
+  it('putR2Cors with rules PUTs the whole rule set', async () => {
+    let seenMethod = '';
+    let seenBody = '';
+    const fetchImpl: typeof fetch = async (_i, init) => {
+      seenMethod = (init?.method ?? '').toLowerCase();
+      seenBody = String(init?.body ?? '');
+      return jsonResponse(envelope({}));
+    };
+    await new CfClient('tok', fetchImpl).putR2Cors('cf-1', 'b1', [
+      { allowed: { methods: ['GET', 'PUT'], origins: ['*'] } },
+    ]);
+    expect(seenMethod).toBe('put');
+    expect(JSON.parse(seenBody)).toEqual({ rules: [{ allowed: { methods: ['GET', 'PUT'], origins: ['*'] } }] });
+  });
+
+  it('custom domains: list maps status, attach posts domain/zoneId/enabled', async () => {
+    const listImpl: typeof fetch = async () =>
+      jsonResponse(
+        envelope({
+          domains: [
+            {
+              domain: 'cdn.a.dev',
+              enabled: true,
+              status: { ownership: 'active', ssl: 'active' },
+              zoneName: 'a.dev',
+            },
+          ],
+        }),
+      );
+    const domains = await new CfClient('tok', listImpl).listR2CustomDomains('cf-1', 'b1');
+    expect(domains).toEqual([
+      { domain: 'cdn.a.dev', enabled: true, ownershipStatus: 'active', sslStatus: 'active', zoneName: 'a.dev' },
+    ]);
+
+    let seenBody = '';
+    const createImpl: typeof fetch = async (_i, init) => {
+      seenBody = String(init?.body ?? '');
+      return jsonResponse(envelope({ domain: 'cdn.a.dev', enabled: true, zoneId: 'z1' }));
+    };
+    const d = await new CfClient('tok', createImpl).attachR2CustomDomain('cf-1', 'b1', {
+      domain: 'cdn.a.dev',
+      zoneId: 'z1',
+    });
+    expect(JSON.parse(seenBody)).toEqual({ domain: 'cdn.a.dev', enabled: true, zoneId: 'z1' });
+    expect(d.domain).toBe('cdn.a.dev');
+  });
+
+  it('managed domain get/set round-trips enabled', async () => {
+    const getImpl: typeof fetch = async () =>
+      jsonResponse(envelope({ bucketId: 'bid', domain: 'pub-x.r2.dev', enabled: false }));
+    expect(await new CfClient('tok', getImpl).getR2ManagedDomain('cf-1', 'b1')).toEqual({
+      domain: 'pub-x.r2.dev',
+      enabled: false,
+    });
+
+    let seenBody = '';
+    const setImpl: typeof fetch = async (_i, init) => {
+      seenBody = String(init?.body ?? '');
+      return jsonResponse(envelope({ bucketId: 'bid', domain: 'pub-x.r2.dev', enabled: true }));
+    };
+    const r = await new CfClient('tok', setImpl).setR2ManagedDomain('cf-1', 'b1', true);
+    expect(JSON.parse(seenBody)).toEqual({ enabled: true });
+    expect(r.enabled).toBe(true);
+  });
+
+  it('lifecycle: GET maps Age conditions to days, PUT builds SDK rules from days', async () => {
+    const getImpl: typeof fetch = async () =>
+      jsonResponse(
+        envelope({
+          rules: [
+            {
+              id: 'r1',
+              enabled: true,
+              conditions: { prefix: 'tmp/' },
+              deleteObjectsTransition: { condition: { type: 'Age', maxAge: 604800 } },
+              storageClassTransitions: [
+                { storageClass: 'InfrequentAccess', condition: { type: 'Age', maxAge: 86400 } },
+              ],
+            },
+            {
+              id: 'r2',
+              enabled: false,
+              conditions: { prefix: '' },
+              deleteObjectsTransition: { condition: { type: 'Date', date: '2027-01-01' } },
+            },
+          ],
+        }),
+      );
+    const rules = await new CfClient('tok', getImpl).getR2Lifecycle('cf-1', 'b1');
+    expect(rules).toEqual([
+      { id: 'r1', enabled: true, prefix: 'tmp/', deleteAfterDays: 7, iaAfterDays: 1 },
+      { id: 'r2', enabled: false, prefix: '', deleteAfterDays: null, iaAfterDays: null },
+    ]);
+
+    let seenBody = '';
+    const putImpl: typeof fetch = async (_i, init) => {
+      seenBody = String(init?.body ?? '');
+      return jsonResponse(envelope({}));
+    };
+    await new CfClient('tok', putImpl).putR2Lifecycle('cf-1', 'b1', [
+      { id: 'r1', enabled: true, prefix: 'tmp/', deleteAfterDays: 7, iaAfterDays: null },
+    ]);
+    expect(JSON.parse(seenBody)).toEqual({
+      rules: [
+        {
+          id: 'r1',
+          enabled: true,
+          conditions: { prefix: 'tmp/' },
+          deleteObjectsTransition: { condition: { type: 'Age', maxAge: 604800 } },
+        },
+      ],
+    });
+  });
+});

@@ -169,3 +169,34 @@ export interface CfR2Object {
   last_modified: string | null;
   is_prefix: boolean;
 }
+
+/** SDK CORSGetResponse.Rule 同构（camelCase 为 CF API 原样字段名） */
+export interface CfR2CorsRule {
+  allowed: { methods: string[]; origins: string[]; headers?: string[] };
+  id?: string;
+  exposeHeaders?: string[];
+  maxAgeSeconds?: number;
+}
+
+/** SDK CustomListResponse.Domain 裁剪 */
+export interface CfR2CustomDomain {
+  domain: string;
+  enabled: boolean;
+  ownershipStatus: string | null;
+  sslStatus: string | null;
+  zoneName: string | null;
+}
+
+export interface CfR2ManagedDomain {
+  domain: string;
+  enabled: boolean;
+}
+
+/** 简化生命周期规则：只支持 Age 条件（天）；Date 条件读出为 null，不可编辑（v1 约定） */
+export interface CfR2LifecycleRule {
+  id: string;
+  enabled: boolean;
+  prefix: string;
+  deleteAfterDays: number | null;
+  iaAfterDays: number | null;
+}
