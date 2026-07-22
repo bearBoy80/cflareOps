@@ -56,4 +56,16 @@ describe('presignR2ObjectUrl', () => {
     );
     expect(url.searchParams.get('X-Amz-Expires')).toBe('60');
   });
+
+  it('adds a signed response-content-disposition when downloadFilename is set', async () => {
+    const base = { cfAccountId: 'cf-1', bucket: 'b1', key: 'docs/报告 v2.pdf', method: 'GET' } as const;
+    const plain = new URL(await presignR2ObjectUrl(CREDS, base));
+    const url = new URL(await presignR2ObjectUrl(CREDS, { ...base, downloadFilename: '报告 v2.pdf' }));
+    expect(url.searchParams.get('response-content-disposition')).toBe(
+      "attachment; filename*=UTF-8''%E6%8A%A5%E5%91%8A%20v2.pdf",
+    );
+    expect(plain.searchParams.get('response-content-disposition')).toBeNull();
+    // 参数进入规范化 URL 参与签名，两个 URL 的签名必然不同
+    expect(url.searchParams.get('X-Amz-Signature')).not.toBe(plain.searchParams.get('X-Amz-Signature'));
+  });
 });

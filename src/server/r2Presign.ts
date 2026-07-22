@@ -22,7 +22,15 @@ export async function deriveR2S3Credentials(
  */
 export async function presignR2ObjectUrl(
   creds: { accessKeyId: string; secretAccessKey: string },
-  opts: { cfAccountId: string; bucket: string; key: string; method: 'GET' | 'PUT'; expiresSeconds?: number },
+  opts: {
+    cfAccountId: string;
+    bucket: string;
+    key: string;
+    method: 'GET' | 'PUT';
+    expiresSeconds?: number;
+    /** 有值时强制附件下载：签名前追加 response-content-disposition（S3 响应头覆盖，随 query 一并签名） */
+    downloadFilename?: string;
+  },
 ): Promise<string> {
   const aws = new AwsClient({
     accessKeyId: creds.accessKeyId,
@@ -33,6 +41,12 @@ export async function presignR2ObjectUrl(
   const encodedKey = opts.key.split('/').map(encodeURIComponent).join('/');
   const url = new URL(`https://${opts.cfAccountId}.r2.cloudflarestorage.com/${opts.bucket}/${encodedKey}`);
   url.searchParams.set('X-Amz-Expires', String(opts.expiresSeconds ?? 900));
+  if (opts.downloadFilename) {
+    url.searchParams.set(
+      'response-content-disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(opts.downloadFilename)}`,
+    );
+  }
   const signed = await aws.sign(new Request(url, { method: opts.method }), { aws: { signQuery: true } });
   return signed.url;
 }
