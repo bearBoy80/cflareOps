@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { CfApiError } from '@/server/cf/client';
 import { appContext, handleCfError, jsonError } from '@/server/context';
 import { getCachedR2Bucket } from '@/server/r2';
 import { clientForAccount } from '@/server/workersPages';
@@ -17,6 +18,10 @@ export const DELETE: APIRoute = async ({ params, locals, request }) => {
       .run();
     return Response.json({ ok: true });
   } catch (e) {
+    // R2 平台约束：非空桶不能删。给稳定 code 让前端出本地化提示，而不是透传 CF 英文原文
+    if (e instanceof CfApiError && /not empty/i.test(e.message)) {
+      return jsonError(e.message, e.status >= 400 && e.status < 500 ? e.status : 409, 'bucketNotEmpty');
+    }
     return handleCfError(e);
   }
 };

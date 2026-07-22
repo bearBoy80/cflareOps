@@ -243,8 +243,13 @@ function R2PanelInner({ locale }: { locale: Locale }) {
         { method: 'DELETE' },
       );
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        showToast(body?.error ?? t(locale, 'common.requestFailed'), 'error');
+        const body = (await res.json().catch(() => null)) as { error?: string; code?: string } | null;
+        showToast(
+          body?.code === 'bucketNotEmpty'
+            ? t(locale, 'r2.bucketNotEmpty')
+            : (body?.error ?? t(locale, 'common.requestFailed')),
+          'error',
+        );
         return;
       }
       showToast(t(locale, 'r2.deleted'), 'success');
