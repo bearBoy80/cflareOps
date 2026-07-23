@@ -34,4 +34,12 @@ describe('isWriteSql', () => {
     expect(isWriteSql('')).toBe(false);
     expect(isWriteSql('   \n ')).toBe(false);
   });
+
+  it.each([
+    "SELECT * FROM t WHERE name = 'unterminated; DROP TABLE t; --",
+    'SELECT `col FROM t; DROP TABLE t;',
+    'SELECT * FROM users WHERE email = "foo@bar.com; DELETE FROM users;',
+  ])('fail closed on unterminated quote: %s', (sql) => {
+    expect(isWriteSql(sql)).toBe(true);
+  });
 });
