@@ -197,3 +197,59 @@ describe('listCachedD1Databases / getCachedD1Database', () => {
     expect(page.databases).toHaveLength(1);
   });
 });
+
+describe('listCachedD1Databases 分页 NaN 守卫 / 钳位', () => {
+  it('page 为 NaN 时不抛错,按第 1 页返回', async () => {
+    const db = createTestDb();
+    const key = await importEncryptionKey(HEX_KEY);
+    await seedAccount(db, key, 'a1', 'tok-1');
+    await syncD1Databases(db, key, ALICE, () =>
+      fakeClient([{ id: 'cf-1', name: 'CF One' }], {
+        'cf-1': [db1('u1', 'db1'), db1('u2', 'db2')],
+      }),
+    );
+    const result = await listCachedD1Databases(db, ALICE, { page: Number('abc') });
+    expect(result.total).toBe(2);
+    expect(result.databases).toHaveLength(2);
+  });
+
+  it('pageSize 999 钳位到 100', async () => {
+    const db = createTestDb();
+    const key = await importEncryptionKey(HEX_KEY);
+    await seedAccount(db, key, 'a1', 'tok-1');
+    await syncD1Databases(db, key, ALICE, () =>
+      fakeClient([{ id: 'cf-1', name: 'CF One' }], {
+        'cf-1': [db1('u1', 'db1'), db1('u2', 'db2')],
+      }),
+    );
+    const result = await listCachedD1Databases(db, ALICE, { pageSize: 999 });
+    expect(result.total).toBe(2);
+    expect(result.databases).toHaveLength(2);
+  });
+
+  it('pageSize 0 钳位到 1', async () => {
+    const db = createTestDb();
+    const key = await importEncryptionKey(HEX_KEY);
+    await seedAccount(db, key, 'a1', 'tok-1');
+    await syncD1Databases(db, key, ALICE, () =>
+      fakeClient([{ id: 'cf-1', name: 'CF One' }], {
+        'cf-1': [db1('u1', 'db1'), db1('u2', 'db2')],
+      }),
+    );
+    const result = await listCachedD1Databases(db, ALICE, { pageSize: 0 });
+    expect(result.total).toBe(2);
+    expect(result.databases).toHaveLength(1);
+  });
+
+  it('page 超范围返回空数组而非报错', async () => {
+    const db = createTestDb();
+    const key = await importEncryptionKey(HEX_KEY);
+    await seedAccount(db, key, 'a1', 'tok-1');
+    await syncD1Databases(db, key, ALICE, () =>
+      fakeClient([{ id: 'cf-1', name: 'CF One' }], { 'cf-1': [db1('u1', 'db1')] }),
+    );
+    const result = await listCachedD1Databases(db, ALICE, { page: 99 });
+    expect(result.total).toBe(1);
+    expect(result.databases).toEqual([]);
+  });
+});

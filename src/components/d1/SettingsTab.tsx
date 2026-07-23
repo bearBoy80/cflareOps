@@ -67,7 +67,9 @@ export default function SettingsTab({
         showToast(body?.error ?? t(locale, 'common.requestFailed'), 'error');
         return;
       }
-      setDetail(((await res.json()) as { database: D1Detail }).database);
+      const updated = ((await res.json()) as { database: D1Detail }).database;
+      // 防御性合并:CF edit 响应理论上应带全字段,但若缺字段(如 num_tables/file_size)不应整替丢显
+      setDetail((prev) => (prev ? { ...prev, ...updated } : updated));
       showToast(t(locale, 'd1.replicationUpdated'), 'success');
     } catch {
       showToast(t(locale, 'common.requestFailed'), 'error');

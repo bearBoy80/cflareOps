@@ -11,6 +11,8 @@ describe('isWriteSql', () => {
     "SELECT * FROM logs WHERE msg = 'please update me'", // 字符串字面量里的写关键词不算
     '-- delete everything\nSELECT 1', // 注释里的写关键词不算
     '/* drop table? no */ SELECT 2',
+    'SELECT 1 /* ; DROP TABLE t;', // 未闭合块注释:SQLite 视为注释延伸到 EOF,不会执行其中内容
+    '/* DELETE FROM t */ SELECT 2 /* drop', // 已闭合注释 + 未闭合注释吞到 EOF,均不算写
   ])('read-only: %s', (sql) => {
     expect(isWriteSql(sql)).toBe(false);
   });

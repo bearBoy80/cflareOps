@@ -148,8 +148,11 @@ export async function listCachedD1Databases(
   ownerEmail: string,
   opts?: { page?: number; pageSize?: number; search?: string },
 ): Promise<{ databases: D1DatabaseItem[]; total: number }> {
-  const page = Math.max(1, opts?.page ?? 1);
-  const pageSize = Math.min(100, Math.max(1, opts?.pageSize ?? 20));
+  // page/pageSize 可能来自查询参数解析(如 Number('abc') → NaN):先做有限数归一再钳位,避免 NaN 落进 LIMIT/OFFSET 撞 D1 抛错
+  const rawPage = opts?.page;
+  const page = Math.max(1, Number.isFinite(rawPage) ? Math.floor(rawPage as number) : 1);
+  const rawPageSize = opts?.pageSize;
+  const pageSize = Math.min(100, Math.max(1, Number.isFinite(rawPageSize) ? Math.floor(rawPageSize as number) : 20));
   const rawSearch = opts?.search?.trim() ?? '';
 
   const conditions: string[] = ['a.owner_email = ?'];

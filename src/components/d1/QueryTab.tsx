@@ -1,6 +1,7 @@
 import { Play } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { type Locale, t } from '@/i18n';
+import { quoteIdent } from '@/lib/sqlIdent';
 import { isWriteSql } from '@/lib/sqlWrite';
 
 const BROWSE_PAGE_SIZE = 50;
@@ -14,11 +15,6 @@ interface QueryResultSet {
 }
 
 type QueryResponse = { results: QueryResultSet[] } | { error: { message: string } };
-
-/** SQLite 标识符引用(浏览模式拼 SELECT 用) */
-function quoteIdent(name: string): string {
-  return `"${name.replace(/"/g, '""')}"`;
-}
 
 function browseSql(table: string, page: number): string {
   return `SELECT * FROM ${quoteIdent(table)} LIMIT ${BROWSE_PAGE_SIZE} OFFSET ${page * BROWSE_PAGE_SIZE}`;
@@ -42,6 +38,8 @@ export default function QueryTab({
   const [confirmSql, setConfirmSql] = useState<string | null>(null);
   const historyKey = `d1-query-history:${apiBase}`;
   const lastSeq = useRef(0);
+  // 请求序号守卫:防止慢的旧请求返回时把新请求的结果/loading 状态覆盖回去
+  const runSeq = useRef(0);
 
   useEffect(() => {
     try {
@@ -52,8 +50,18 @@ export default function QueryTab({
     }
   }, [historyKey]);
 
+  useEffect(() => {
+    if (confirmSql === null) return;
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setConfirmSql(null);
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [confirmSql]);
+
   const execute = useCallback(
     async (text: string, browseCtx: { table: string; page: number } | null) => {
+      const seq = ++runSeq.current;
       setRunning(true);
       setBrowseState(browseCtx);
       try {
@@ -62,12 +70,16 @@ export default function QueryTab({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sql: text }),
         });
+        if (seq !== runSeq.current) return; // 已有更新的请求发出,本次结果作废
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as { error?: string } | null;
+          if (seq !== runSeq.current) return;
           setResp({ error: { message: body?.error ?? t(locale, 'common.requestFailed') } });
           return;
         }
-        setResp((await res.json()) as QueryResponse);
+        const json = (await res.json()) as QueryResponse;
+        if (seq !== runSeq.current) return;
+        setResp(json);
         if (!browseCtx) {
           setHistory((h) => {
             const next = [text, ...h.filter((x) => x !== text)].slice(0, HISTORY_MAX);
@@ -80,9 +92,10 @@ export default function QueryTab({
           });
         }
       } catch {
+        if (seq !== runSeq.current) return;
         setResp({ error: { message: t(locale, 'common.requestFailed') } });
       } finally {
-        setRunning(false);
+        if (seq === runSeq.current) setRunning(false);
       }
     },
     [apiBase, historyKey, locale],

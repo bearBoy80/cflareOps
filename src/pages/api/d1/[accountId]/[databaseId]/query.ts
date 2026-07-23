@@ -15,7 +15,14 @@ export const POST: APIRoute = async ({ params, locals, request }) => {
   const sql = typeof body?.sql === 'string' ? body.sql.trim() : '';
   if (!sql) return jsonError('sql is required', 400);
   if (sql.length > MAX_SQL_LEN) return jsonError('sql too long', 400);
-  const bindParams = Array.isArray(body?.params) ? body.params.filter((p): p is string => typeof p === 'string') : [];
+  // params 若提供必须是纯字符串数组;混入非字符串元素此前被静默 filter 掉,会让调用方误以为参数按位置传入
+  let bindParams: string[] = [];
+  if (body?.params !== undefined) {
+    if (!Array.isArray(body.params) || !body.params.every((p): p is string => typeof p === 'string')) {
+      return jsonError('params must be an array of strings', 400);
+    }
+    bindParams = body.params;
+  }
   const cached = await getCachedD1Database(db, userEmail, params.accountId!, params.databaseId!);
   if (!cached) return jsonError('Database not found', 404);
   try {

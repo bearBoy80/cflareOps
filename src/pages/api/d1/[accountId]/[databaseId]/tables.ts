@@ -1,15 +1,11 @@
 import type { APIRoute } from 'astro';
+import { quoteIdent } from '@/lib/sqlIdent';
 import { appContext, handleCfError, jsonError } from '@/server/context';
 import { getCachedD1Database } from '@/server/d1';
 import { clientForAccount } from '@/server/workersPages';
 
 /** 单次列出的表数上限:每表 2 条语句(PRAGMA + COUNT),100 表 = 200 语句,已远超常规库 */
 const MAX_TABLES = 100;
-
-/** SQLite 标识符引用:双引号包裹,内部双引号翻倍 */
-function quoteIdent(name: string): string {
-  return `"${name.replace(/"/g, '""')}"`;
-}
 
 export const GET: APIRoute = async ({ params, locals }) => {
   const { db, key, userEmail } = await appContext(locals);

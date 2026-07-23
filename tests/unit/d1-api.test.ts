@@ -119,6 +119,20 @@ describe('POST /api/d1/:accountId/:databaseId/query validation', () => {
     );
     expect(res.status).toBe(400);
   });
+
+  it('400s when params contains a non-string element', async () => {
+    const db = createTestDb();
+    await seed(db);
+    const res = await queryPost(
+      ctx(
+        db,
+        'http://localhost/api/d1/a1/u1/query',
+        { method: 'POST', body: JSON.stringify({ sql: 'SELECT 1', params: [1] }) },
+        { accountId: 'a1', databaseId: 'u1' },
+      ),
+    );
+    expect(res.status).toBe(400);
+  });
 });
 
 describe('PATCH /api/d1/:accountId/:databaseId validation', () => {

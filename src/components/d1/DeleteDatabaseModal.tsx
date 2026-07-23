@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { type Locale, t } from '@/i18n';
 
 /** 输名确认删除模态(列表页与设置 Tab 共用):输入与库名完全一致才放开确认键,防误删 */
@@ -17,6 +17,14 @@ export default function DeleteDatabaseModal({
 }) {
   const [typed, setTyped] = useState('');
   const matched = typed === name;
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !deleting) onCancel();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [deleting, onCancel]);
   return (
     <dialog open className="modal modal-open">
       <div className="modal-box">
