@@ -49,7 +49,7 @@
 
 ### Migration(`migrations/0004_d1.sql`)
 
-`cf_d1_databases` 表,列 1:1 映射 SDK `D1` 对象:
+`d1_databases` 表(命名跟随既有缓存表 `zones`/`workers_scripts`/`r2_buckets` 的无前缀约定),列 1:1 映射 SDK `D1` 对象:
 
 ```
 account_id TEXT NOT NULL REFERENCES cf_accounts(id) ON DELETE CASCADE
