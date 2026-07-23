@@ -1,0 +1,27 @@
+---
+import MainLayout from '@/layouts/MainLayout.astro';
+import D1DatabaseDetailPanel from '@/components/d1/D1DatabaseDetailPanel';
+import { t } from '@/i18n';
+import { localeFromPath, localizePath } from '@/i18n/routing';
+const { accountId, databaseId } = Astro.params;
+const locale = localeFromPath(Astro.url.pathname);
+const initialTab = Astro.url.searchParams.get('tab');
+// 列表页链接带 ?name=,面包屑/标题即时显示库名;直链缺省时回退 uuid
+const dbName = Astro.url.searchParams.get('name');
+---
+<MainLayout title={`${t(locale, 'd1.dbDetailTitle')} · ${dbName ?? databaseId}`} locale={locale}>
+  <nav class="breadcrumbs mb-4 text-sm">
+    <ul>
+      <li><a href={localizePath(locale, '/d1')}>{t(locale, 'nav.d1')}</a></li>
+      <li class="font-mono">{dbName ?? databaseId}</li>
+    </ul>
+  </nav>
+  <D1DatabaseDetailPanel
+    accountId={accountId!}
+    databaseId={databaseId!}
+    dbName={dbName}
+    locale={locale}
+    initialTab={initialTab}
+    client:load
+  />
+</MainLayout>
