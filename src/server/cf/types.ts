@@ -207,3 +207,28 @@ export interface CfR2LifecycleRule {
   unsupported?: boolean;
   raw?: unknown;
 }
+
+/** 字段名与 SDK d1.database D1 对象一致;read_replication_mode 由 read_replication.mode 拍平,raw 为 SDK 原始对象 */
+export interface CfD1Database {
+  uuid: string;
+  name: string;
+  version: string | null;
+  created_at: string | null;
+  num_tables: number | null;
+  file_size: number | null;
+  read_replication_mode: 'auto' | 'disabled' | null;
+  raw?: unknown;
+}
+
+/** raw 端点单条语句的结果:列名与行分离(比 query 端点省流量且适合表格渲染) */
+export interface CfD1QueryResult {
+  columns: string[];
+  rows: unknown[][];
+  meta: {
+    duration: number | null;
+    changes: number | null;
+    changed_db: boolean;
+    rows_read: number | null;
+    rows_written: number | null;
+  };
+}

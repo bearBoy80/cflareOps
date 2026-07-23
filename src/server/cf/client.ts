@@ -2,6 +2,8 @@ import Cloudflare from 'cloudflare';
 import pLimit from 'p-limit';
 import type {
   CfAccount,
+  CfD1Database,
+  CfD1QueryResult,
   CfDnsRecord,
   CfDnsRecordInput,
   CfPagesDeployment,
@@ -220,6 +222,29 @@ function toPagesDomain(d: unknown): CfPagesDomain {
     name: dom.name ?? '',
     status: dom.status ?? null,
     validation_status: dom.validation_data?.status ?? null,
+  };
+}
+
+/** list 响应的 num_tables/file_size/read_replication SDK typings 未声明但运行时返回,best-effort 读取(同 toWorkerVersion 先例) */
+function toD1Database(d: unknown): CfD1Database {
+  const db = d as {
+    uuid?: string;
+    name?: string;
+    version?: string;
+    created_at?: string;
+    num_tables?: number;
+    file_size?: number;
+    read_replication?: { mode?: 'auto' | 'disabled' } | null;
+  };
+  return {
+    uuid: db.uuid ?? '',
+    name: db.name ?? '',
+    version: db.version ?? null,
+    created_at: db.created_at ?? null,
+    num_tables: typeof db.num_tables === 'number' ? db.num_tables : null,
+    file_size: typeof db.file_size === 'number' ? db.file_size : null,
+    read_replication_mode: db.read_replication?.mode ?? null,
+    raw: d,
   };
 }
 
@@ -1518,6 +1543,80 @@ export class CfClient {
           };
         }),
       });
+    });
+  }
+
+  /** 账号下 D1 数据库列表(V4 分页迭代取全量) */
+  listD1Databases(cfAccountId: string): Promise<CfD1Database[]> {
+    return this.wrap(async () => {
+      const out: CfD1Database[] = [];
+      for await (const d of this.sdk.d1.database.list({ account_id: cfAccountId, per_page: 100 })) {
+        out.push(toD1Database(d));
+      }
+      return out;
+    });
+  }
+
+  /** 单库实时详情(file_size/num_tables/read_replication 以此为准,列表缓存仅 best-effort) */
+  getD1Database(cfAccountId: string, databaseId: string): Promise<CfD1Database> {
+    return this.wrap(async () => toD1Database(await this.sdk.d1.database.get(databaseId, { account_id: cfAccountId })));
+  }
+
+  /** 创建数据库;primaryLocationHint 为 CF 主副本区域提示(wnam/enam/weur/eeur/apac/oc),省略则就近 */
+  createD1Database(cfAccountId: string, opts: { name: string; primaryLocationHint?: string }): Promise<CfD1Database> {
+    return this.wrap(async () =>
+      toD1Database(
+        await this.sdk.d1.database.create({
+          account_id: cfAccountId,
+          name: opts.name,
+          ...(opts.primaryLocationHint ? { primary_location_hint: opts.primaryLocationHint as never } : {}),
+        }),
+      ),
+    );
+  }
+
+  deleteD1Database(cfAccountId: string, databaseId: string): Promise<void> {
+    return this.wrap(async () => {
+      await this.sdk.d1.database.delete(databaseId, { account_id: cfAccountId });
+    });
+  }
+
+  /** 读复制开关(PATCH .../d1/database/:id,body 仅 read_replication.mode) */
+  editD1DatabaseReplication(cfAccountId: string, databaseId: string, mode: 'auto' | 'disabled'): Promise<CfD1Database> {
+    return this.wrap(async () =>
+      toD1Database(
+        await this.sdk.d1.database.edit(databaseId, { account_id: cfAccountId, read_replication: { mode } }),
+      ),
+    );
+  }
+
+  /**
+   * 执行 SQL(POST .../raw:列名/行分离,比 /query 的对象数组省流量)。
+   * sql 支持分号分隔多语句(CF 侧按批执行),每条语句一个结果集。
+   * SQL 语法/运行时错误由 CF 以 400 + 7500 系列 code 返回 → CfApiError(400),
+   * 是否当"结果"展示由路由层决定,这里统一抛出。
+   */
+  queryD1Raw(cfAccountId: string, databaseId: string, sql: string, params?: string[]): Promise<CfD1QueryResult[]> {
+    return this.wrap(async () => {
+      const out: CfD1QueryResult[] = [];
+      for await (const r of this.sdk.d1.database.raw(databaseId, {
+        account_id: cfAccountId,
+        sql,
+        ...(params?.length ? { params } : {}),
+      })) {
+        out.push({
+          columns: r.results?.columns ?? [],
+          rows: (r.results?.rows ?? []) as unknown[][],
+          meta: {
+            duration: r.meta?.duration ?? null,
+            changes: r.meta?.changes ?? null,
+            changed_db: r.meta?.changed_db ?? false,
+            rows_read: r.meta?.rows_read ?? null,
+            rows_written: r.meta?.rows_written ?? null,
+          },
+        });
+      }
+      return out;
     });
   }
 }
