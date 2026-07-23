@@ -13,23 +13,25 @@ describe('CfClient D1 databases', () => {
   it('listD1Databases hits /accounts/:id/d1/database and maps fields best-effort', async () => {
     let seenUrl = '';
     const fetchImpl: typeof fetch = async (input) => {
-      seenUrl = String(input);
-      return jsonResponse(
-        envelope(
-          [
-            {
-              uuid: 'u1',
-              name: 'db-one',
-              version: 'production',
-              created_at: '2026-01-01T00:00:00Z',
-              num_tables: 4,
-              file_size: 2048,
-            },
-            { uuid: 'u2', name: 'db-two' }, // 最小字段:num_tables/file_size 缺失 → null
-          ],
-          { page: 1, per_page: 100, count: 2, total_count: 2 },
-        ),
-      );
+      const url = new URL(String(input));
+      if (!seenUrl) seenUrl = String(input);
+      // V4PagePaginationArray:迭代在某页返回 0 条时终止(同 cf-client.test.ts listZones 用例)
+      const page = Number(url.searchParams.get('page') ?? '1');
+      const result =
+        page === 1
+          ? [
+              {
+                uuid: 'u1',
+                name: 'db-one',
+                version: 'production',
+                created_at: '2026-01-01T00:00:00Z',
+                num_tables: 4,
+                file_size: 2048,
+              },
+              { uuid: 'u2', name: 'db-two' }, // 最小字段:num_tables/file_size 缺失 → null
+            ]
+          : [];
+      return jsonResponse(envelope(result, { page, per_page: 100, count: result.length, total_count: 2 }));
     };
     const dbs = await new CfClient('tok', fetchImpl).listD1Databases('cf-1');
     expect(seenUrl).toContain('/accounts/cf-1/d1/database');
