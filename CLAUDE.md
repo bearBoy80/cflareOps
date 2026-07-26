@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-cloudflareOps — a self-hosted dashboard to manage **multiple Cloudflare accounts** (Zones, DNS, Workers, Pages, R2 storage, usage analytics) from one place. Astro 5 SSR + React 19 islands on Cloudflare Pages, D1 (SQLite) for storage, Cloudflare Access (Zero Trust) for auth. Bilingual UI (zh default / en).
+cloudflareOps — a self-hosted dashboard to manage **multiple Cloudflare accounts** (Zones, DNS, Workers, Pages, R2 storage, D1 databases, usage analytics) from one place. Astro 5 SSR + React 19 islands on Cloudflare Pages, D1 (SQLite) for storage, Cloudflare Access (Zero Trust) for auth. Bilingual UI (zh default / en).
 
 ## Commands
 
@@ -47,6 +47,8 @@ First-time local setup: `npm install`, `cp wrangler.toml.example wrangler.toml`,
 
 **R2 has one sanctioned exception to the CfClient boundary.** Bucket/object/settings/usage calls go through `CfClient` like everything else, but object transfers are browser-direct via presigned S3 URLs built in `src/server/r2Presign.ts` — the **only** file allowed to reference `*.r2.cloudflarestorage.com`. S3 credentials are derived per request from the account token (accessKeyId = `verifyToken().id`, secret = SHA-256 hex of the token) and are never stored or logged. Adding `downloadFilename` appends a `response-content-disposition=attachment` query param **before signing** → true attachment download. Object preview is a hybrid channel: media kinds (image/pdf/video/audio) load presigned GET URLs directly in tags (tag loads are CORS-exempt, so bucket CORS config is not required); text/markdown go through `GET .../content`, which relays ≤1 MB via `CfClient.getR2ObjectContent` (over limit → 413 with code `objectTooLarge`); markdown renders only inside a sandbox iframe (`sandbox=""` + srcDoc — same anti-XSS pattern as `EmailPreview`). R2 SDK gotchas: objects list with `delimiter='/'` returns folder prefixes in `result_info.delimited` (undeclared in SDK types), not in the result array; object keys must be per-segment encoded via `encodeR2ObjectKey` (the SDK splices keys into URLs raw).
 
+**D1 management operates on the user's *remote* D1 databases** (not this app's own `DB` binding) via `CfClient.queryD1Raw` — the `/raw` endpoint returns one result set per semicolon-separated statement (the tables view relies on this ordering for its PRAGMA/COUNT pairing). The query console accepts arbitrary SQL; the write-statement confirmation (`isWriteSql` in `src/lib/sqlWrite.ts`) is a **front-end UX layer only, by design** — not a security boundary (a bypass writes only to the user's own database with their own token). `isWriteSql` fails closed: unterminated quotes/block comments, `ANALYZE`, and value-setting `PRAGMA`s all count as writes. Any identifier interpolated into remote SQL (e.g. table names from `sqlite_master`) must go through `quoteIdent` (`src/lib/sqlIdent.ts`). The `d1_databases` cache table follows the standard cache-fill pattern; missing D1 Edit scope 403s only mutating actions (create/delete/write SQL/replication toggle), never read views.
+
 **Secrets (API tokens) are encrypted at rest** with AES-GCM (`src/server/crypto.ts`). `ENCRYPTION_KEY` is 64 hex chars (256-bit). Stored format is `base64(iv).base64(ciphertext)`. Tokens are also de-duplicated per user via `token_hash` (SHA-256). Never log or return decrypted tokens.
 
 **Sync = cache-fill pattern.** `syncWorkersPages` (`src/server/workersPages.ts`) and the zones sync fan out across a user's accounts with `p-limit` concurrency (3). Each account's refresh is an **atomic batch**: collect `DELETE ... WHERE account_id=?` + all `INSERT`s, then run them in one D1 `batch()`. If any upstream fetch throws first, the batch never runs and the old cache is preserved (no partial-delete). Per-account failures are collected and reported, not fatal — one bad token doesn't block other accounts.
@@ -69,7 +71,7 @@ src/
     cf/types.ts          normalized Cf* shapes
     db/accounts.ts       account repo (all owner_email-scoped)
     workersPages.ts      Workers/Pages sync + cache reads
-    zones.ts, usage.ts, r2.ts  same pattern for zones, analytics, and R2 buckets
+    zones.ts, usage.ts, r2.ts, d1.ts  same pattern for zones, analytics, R2 buckets, and D1 databases
     r2Presign.ts         presigned S3 URL builder (the only *.r2.cloudflarestorage.com site)
   pages/                 Astro routes + src/pages/api/** endpoints (file-based)
   pages/en/**            English mirror of the localized routes
