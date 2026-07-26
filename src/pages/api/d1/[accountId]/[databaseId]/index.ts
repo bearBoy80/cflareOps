@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { CfApiError } from '@/server/cf/client';
 import { appContext, handleCfError, jsonError } from '@/server/context';
 import { getCachedD1Database } from '@/server/d1';
 import { clientForAccount } from '@/server/workersPages';
@@ -27,9 +28,19 @@ export const PATCH: APIRoute = async ({ params, locals, request }) => {
   try {
     const client = await clientForAccount(db, key, userEmail, params.accountId!);
     const database = await client.editD1DatabaseReplication(cached.cfAccountId, cached.uuid, mode);
+    // raw_json/synced_at 一并更新,避免缓存行的平铺列与 raw_json 内容互相矛盾
     await db
-      .prepare('UPDATE d1_databases SET read_replication_mode = ? WHERE account_id = ? AND uuid = ?')
-      .bind(mode, cached.accountId, cached.uuid)
+      .prepare(
+        `UPDATE d1_databases SET read_replication_mode = ?, raw_json = json_patch(raw_json, ?), synced_at = ?
+         WHERE account_id = ? AND uuid = ?`,
+      )
+      .bind(
+        mode,
+        JSON.stringify({ read_replication: { mode } }),
+        new Date().toISOString(),
+        cached.accountId,
+        cached.uuid,
+      )
       .run();
     return Response.json({ database });
   } catch (e) {
@@ -43,7 +54,12 @@ export const DELETE: APIRoute = async ({ params, locals }) => {
   if (!cached) return jsonError('Database not found', 404);
   try {
     const client = await clientForAccount(db, key, userEmail, params.accountId!);
-    await client.deleteD1Database(cached.cfAccountId, cached.uuid);
+    try {
+      await client.deleteD1Database(cached.cfAccountId, cached.uuid);
+    } catch (e) {
+      // 远端已不存在(别处删过):按删除成功处理,仍清缓存行——否则该行只能靠全量同步才能消掉,重试永远 404
+      if (!(e instanceof CfApiError && e.status === 404)) throw e;
+    }
     await db
       .prepare('DELETE FROM d1_databases WHERE account_id = ? AND uuid = ?')
       .bind(cached.accountId, cached.uuid)

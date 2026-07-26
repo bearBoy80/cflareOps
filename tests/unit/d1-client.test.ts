@@ -143,6 +143,17 @@ describe('CfClient D1 databases', () => {
     expect(results[0].meta).toEqual({ duration: 0.5, changes: 0, changed_db: false, rows_read: 2, rows_written: 0 });
   });
 
+  it('queryD1Raw forwards bind params in the request body', async () => {
+    let seenBody = '';
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      seenBody = String(init?.body ?? '');
+      return jsonResponse(envelope([{ success: true, results: { columns: ['a'], rows: [['x']] }, meta: {} }]));
+    };
+    await new CfClient('tok', fetchImpl).queryD1Raw('cf-1', 'u1', 'SELECT * FROM t WHERE a = ?', ['x']);
+    // params 丢失/改名会让控制台的参数化查询静默绑定不上——锁死请求体形状
+    expect(JSON.parse(seenBody)).toEqual({ sql: 'SELECT * FROM t WHERE a = ?', params: ['x'] });
+  });
+
   it('queryD1Raw surfaces SQL errors as CfApiError with the CF message', async () => {
     const failing: typeof fetch = async () =>
       jsonResponse(

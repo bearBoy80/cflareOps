@@ -11,8 +11,8 @@ describe('isWriteSql', () => {
     "SELECT * FROM logs WHERE msg = 'please update me'", // 字符串字面量里的写关键词不算
     '-- delete everything\nSELECT 1', // 注释里的写关键词不算
     '/* drop table? no */ SELECT 2',
-    'SELECT 1 /* ; DROP TABLE t;', // 未闭合块注释:SQLite 视为注释延伸到 EOF,不会执行其中内容
-    '/* DELETE FROM t */ SELECT 2 /* drop', // 已闭合注释 + 未闭合注释吞到 EOF,均不算写
+    'PRAGMA table_info(users)', // 查询型 PRAGMA(无赋值)不算写
+    'PRAGMA foreign_key_list(`t`)',
   ])('read-only: %s', (sql) => {
     expect(isWriteSql(sql)).toBe(false);
   });
@@ -28,6 +28,10 @@ describe('isWriteSql', () => {
     'WITH doomed AS (SELECT id FROM t) DELETE FROM t WHERE id IN (SELECT id FROM doomed)', // CTE 后接写语句
     'SELECT 1; DROP TABLE t', // 多语句批中的写语句
     'VACUUM',
+    'ANALYZE', // 写 sqlite_stat 统计表
+    'analyze main.t',
+    'PRAGMA defer_foreign_keys = on', // 带赋值的 PRAGMA 改设置,按写对待
+    'PRAGMA optimize', // 隐式 ANALYZE
   ])('write: %s', (sql) => {
     expect(isWriteSql(sql)).toBe(true);
   });
@@ -41,7 +45,9 @@ describe('isWriteSql', () => {
     "SELECT * FROM t WHERE name = 'unterminated; DROP TABLE t; --",
     'SELECT `col FROM t; DROP TABLE t;',
     'SELECT * FROM users WHERE email = "foo@bar.com; DELETE FROM users;',
-  ])('fail closed on unterminated quote: %s', (sql) => {
+    'SELECT 1 /* ; DROP TABLE t;', // 未闭合块注释吞掉剩余输入,同引号 fail closed(SQL 由 D1 服务端切分执行,本地不假设其注释语义)
+    '/* DELETE FROM t */ SELECT 2 /* drop',
+  ])('fail closed on unterminated quote/comment: %s', (sql) => {
     expect(isWriteSql(sql)).toBe(true);
   });
 });

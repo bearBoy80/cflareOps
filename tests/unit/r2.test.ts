@@ -178,6 +178,10 @@ describe('syncR2Buckets', () => {
     const page = await listCachedR2Buckets(db, ALICE, { page: -3, pageSize: 2 });
     expect(page.buckets).toHaveLength(2);
     expect(page.total).toBe(3);
+    // NaN 守卫(如路由层 Number('abc')):归一到默认页,不落进 LIMIT/OFFSET 抛错
+    const nan = await listCachedR2Buckets(db, ALICE, { page: Number.NaN, pageSize: Number.NaN });
+    expect(nan.buckets).toHaveLength(3);
+    expect(nan.total).toBe(3);
   });
 
   it('getCachedR2Bucket enforces owner scope', async () => {

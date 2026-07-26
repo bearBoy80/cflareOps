@@ -15,15 +15,7 @@ interface D1Detail {
   read_replication_mode: 'auto' | 'disabled' | null;
 }
 
-export default function SettingsTab({
-  locale,
-  apiBase,
-  dbName,
-}: {
-  locale: Locale;
-  apiBase: string;
-  dbName: string | null;
-}) {
+export default function SettingsTab({ locale, apiBase }: { locale: Locale; apiBase: string }) {
   const [detail, setDetail] = useState<D1Detail | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
@@ -153,10 +145,11 @@ export default function SettingsTab({
         </button>
       </div>
 
+      {/* 输名确认必须对准 CF 实时返回的库名:URL ?name= 可被旧链接/手改带错,拿它确认等于给错误对象放行 */}
       {showDelete && (
         <DeleteDatabaseModal
           locale={locale}
-          name={dbName ?? detail.name}
+          name={detail.name}
           deleting={deleting}
           onCancel={() => setShowDelete(false)}
           onConfirm={() => void deleteDatabase()}

@@ -1,5 +1,5 @@
 import { DatabaseZap, Plus, RefreshCw, Search } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { type Locale, t } from '@/i18n';
 import { localizePath } from '@/i18n/routing';
 import { accountColor } from '@/lib/accountColor';
@@ -56,6 +56,7 @@ function D1PanelInner({ locale }: { locale: Locale }) {
   const [showCreate, setShowCreate] = useState(false);
   const [accounts, setAccounts] = useState<AccountOption[]>([]);
   const [cfAccounts, setCfAccounts] = useState<AccountOption[]>([]);
+  const [cfAccountsError, setCfAccountsError] = useState(false);
   const [createAccount, setCreateAccount] = useState('');
   const [createCfAccount, setCreateCfAccount] = useState('');
   const [createName, setCreateName] = useState('');
@@ -77,18 +78,24 @@ function D1PanelInner({ locale }: { locale: Locale }) {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
+  // 竞态守卫:翻页/搜索连发时旧请求后到会覆盖新结果——只让最新一次请求落地(同 QueryTab runSeq 模式)
+  const reloadSeq = useRef(0);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: refreshKey 是刻意的额外依赖，递增强制重拉
   const reload = useCallback(async () => {
+    const seq = ++reloadSeq.current;
     setFetching(true);
     try {
       const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize), search });
       const res = await fetch(`/api/d1/databases?${params}`);
+      if (seq !== reloadSeq.current) return;
       if (!res.ok) {
         setLoadError(true);
         return;
       }
-      setLoadError(false);
       const data = (await res.json()) as { databases: D1DatabaseItem[]; total: number };
+      if (seq !== reloadSeq.current) return;
+      setLoadError(false);
       if (data.databases.length === 0 && data.total > 0 && page > 1) {
         setPage(1);
         return;
@@ -96,10 +103,12 @@ function D1PanelInner({ locale }: { locale: Locale }) {
       setRows(data.databases);
       setTotal(data.total);
     } catch {
-      setLoadError(true);
+      if (seq === reloadSeq.current) setLoadError(true);
     } finally {
-      setLoading(false);
-      setFetching(false);
+      if (seq === reloadSeq.current) {
+        setLoading(false);
+        setFetching(false);
+      }
     }
   }, [page, pageSize, search, refreshKey]);
 
@@ -121,28 +130,40 @@ function D1PanelInner({ locale }: { locale: Locale }) {
     })();
   }, []);
 
-  // 选择账号后拉该 token 可见的 CF 账号列表
+  // 选择账号后拉该 token 可见的 CF 账号列表。cancelled 守卫:快速切换账号时,
+  // 旧账号的慢响应后到会覆盖新账号的列表,甚至把旧 token 的 cfAccountId 自动选进新账号的创建请求
   useEffect(() => {
     setCfAccounts([]);
     setCreateCfAccount('');
+    setCfAccountsError(false);
     if (!createAccount) return;
+    let cancelled = false;
     void (async () => {
       try {
         const r = await fetch(`/api/accounts/${encodeURIComponent(createAccount)}/cf-accounts`);
-        if (r.ok) {
-          const list = ((await r.json()) as { cfAccounts?: AccountOption[] }).cfAccounts ?? [];
-          setCfAccounts(list);
-          if (list.length === 1) setCreateCfAccount(list[0].id);
+        if (cancelled) return;
+        if (!r.ok) {
+          setCfAccountsError(true);
+          return;
         }
+        const list = ((await r.json()) as { cfAccounts?: AccountOption[] }).cfAccounts ?? [];
+        if (cancelled) return;
+        setCfAccounts(list);
+        if (list.length === 1) setCreateCfAccount(list[0].id);
+        // 空列表意味着创建按钮永远点不亮:按加载失败提示,而不是无声死路
+        if (list.length === 0) setCfAccountsError(true);
       } catch {
-        // 下拉留空，用户可换账号重试
+        if (!cancelled) setCfAccountsError(true);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [createAccount]);
 
   const dbHref = useCallback(
     (row: D1DatabaseItem) =>
-      localizePath(locale, `/d1/${row.accountId}/${encodeURIComponent(row.uuid)}`) +
+      localizePath(locale, `/d1/${encodeURIComponent(row.accountId)}/${encodeURIComponent(row.uuid)}`) +
       `?name=${encodeURIComponent(row.name)}`,
     [locale],
   );
@@ -378,13 +399,18 @@ function D1PanelInner({ locale }: { locale: Locale }) {
               value={createCfAccount}
               onChange={(e) => setCreateCfAccount(e.target.value)}
             >
-              <option value="">CF</option>
+              <option value="">{t(locale, 'common.selectCfAccount')}</option>
               {cfAccounts.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name}
                 </option>
               ))}
             </select>
+          )}
+          {cfAccountsError && (
+            <p className="w-full text-error text-xs sm:self-center sm:w-auto">
+              {t(locale, 'common.cfAccountsLoadFailed')}
+            </p>
           )}
           <input
             type="text"

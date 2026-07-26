@@ -11,13 +11,11 @@ const TAB_KEYS = ['tables', 'query', 'settings'] as const;
 export default function D1DatabaseDetailPanel({
   accountId,
   databaseId,
-  dbName,
   locale,
   initialTab,
 }: {
   accountId: string;
   databaseId: string;
-  dbName: string | null;
   locale: Locale;
   initialTab?: string | null;
 }) {
@@ -52,7 +50,7 @@ export default function D1DatabaseDetailPanel({
           <div className={tab === 'query' ? '' : 'hidden'}>
             <QueryTab locale={locale} apiBase={apiBase} browse={browse} />
           </div>
-          {tab === 'settings' && <SettingsTab locale={locale} apiBase={apiBase} dbName={dbName} />}
+          {tab === 'settings' && <SettingsTab locale={locale} apiBase={apiBase} />}
         </div>
       </div>
     </ToastProvider>

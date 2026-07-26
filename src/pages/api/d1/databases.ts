@@ -14,6 +14,8 @@ export const GET: APIRoute = async ({ locals, request }) => {
 
 /** D1 库名规则:1-63 位小写字母/数字/连字符/下划线,首字符为字母或数字 */
 const DB_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,62}$/;
+/** CF 账号 id 固定 32 位 hex;校验防其被拼进 SDK URL 路径时携带 `/`../ 等改写请求路径 */
+const CF_ACCOUNT_ID_RE = /^[0-9a-f]{32}$/i;
 const LOCATION_HINTS = new Set(['wnam', 'enam', 'weur', 'eeur', 'apac', 'oc']);
 
 export const POST: APIRoute = async ({ locals, request }) => {
@@ -30,6 +32,7 @@ export const POST: APIRoute = async ({ locals, request }) => {
   const hint = typeof body?.primaryLocationHint === 'string' ? body.primaryLocationHint : '';
   if (!accountId || !cfAccountId) return jsonError('accountId and cfAccountId are required', 400);
   if (!DB_NAME_RE.test(name)) return jsonError('invalid database name', 400, 'invalidDatabaseName');
+  if (!CF_ACCOUNT_ID_RE.test(cfAccountId)) return jsonError('invalid cfAccountId', 400);
   if (hint && !LOCATION_HINTS.has(hint)) return jsonError('invalid location hint', 400);
   try {
     const client = await clientForAccount(db, key, userEmail, accountId);

@@ -69,6 +69,18 @@ describe('POST /api/d1/databases validation', () => {
     );
     expect(res.status).toBe(400);
   });
+
+  it('400s on a malformed cfAccountId before touching CF (path-splice guard)', async () => {
+    const db = createTestDb();
+    await seed(db);
+    const res = await databasesPost(
+      ctx(db, 'http://localhost/api/d1/databases', {
+        method: 'POST',
+        body: JSON.stringify({ accountId: 'a1', cfAccountId: 'x/d1/database/../../../zones', name: 'ok-name' }),
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
 });
 
 describe('database ownership guard (detail/query/tables/delete/patch)', () => {
@@ -151,6 +163,47 @@ describe('PATCH /api/d1/:accountId/:databaseId validation', () => {
   });
 });
 
+describe('PATCH /api/d1/:accountId/:databaseId cache consistency', () => {
+  it('updates the flat column, raw_json and synced_at together on success', async () => {
+    const db = createTestDb();
+    await seed(db);
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          success: true,
+          errors: [],
+          messages: [],
+          result: { uuid: 'u1', name: 'db-one', read_replication: { mode: 'auto' } },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      )) as typeof fetch;
+    try {
+      const res = await dbPatch(
+        ctx(
+          db,
+          'http://localhost/api/d1/a1/u1',
+          { method: 'PATCH', body: JSON.stringify({ mode: 'auto' }) },
+          { accountId: 'a1', databaseId: 'u1' },
+        ),
+      );
+      expect(res.status).toBe(200);
+      const row = await db
+        .prepare('SELECT read_replication_mode, raw_json, synced_at FROM d1_databases WHERE uuid = ?')
+        .bind('u1')
+        .first<{ read_replication_mode: string; raw_json: string; synced_at: string }>();
+      expect(row?.read_replication_mode).toBe('auto');
+      // raw_json 与平铺列必须同步,否则缓存行自相矛盾
+      expect((JSON.parse(row!.raw_json) as { read_replication?: { mode?: string } }).read_replication?.mode).toBe(
+        'auto',
+      );
+      expect(row?.synced_at).not.toBe('2026-07-22T00:00:00Z');
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});
+
 describe('DELETE /api/d1/:accountId/:databaseId', () => {
   it('removes the cached row after CF confirms the delete', async () => {
     const db = createTestDb();
@@ -169,6 +222,76 @@ describe('DELETE /api/d1/:accountId/:databaseId', () => {
       expect(res.status).toBe(200);
       const row = await db.prepare('SELECT COUNT(*) AS c FROM d1_databases').first<{ c: number }>();
       expect(row?.c).toBe(0);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('purges the cached row even when CF says the database is already gone (404)', async () => {
+    const db = createTestDb();
+    await seed(db);
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({ success: false, errors: [{ code: 7404, message: 'not found' }], messages: [], result: null }),
+        { status: 404, headers: { 'Content-Type': 'application/json' } },
+      )) as typeof fetch;
+    try {
+      const res = await dbDelete(
+        ctx(db, 'http://localhost/api/d1/a1/u1', { method: 'DELETE' }, { accountId: 'a1', databaseId: 'u1' }),
+      );
+      // 远端已不存在也要清缓存返回成功,否则该行卡死:重试永远 404,只有全量同步能救
+      expect(res.status).toBe(200);
+      const row = await db.prepare('SELECT COUNT(*) AS c FROM d1_databases').first<{ c: number }>();
+      expect(row?.c).toBe(0);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});
+
+describe('GET /api/d1/:accountId/:databaseId/tables', () => {
+  it('pairs PRAGMA/COUNT result sets with the right tables', async () => {
+    const db = createTestDb();
+    await seed(db);
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = (async (_input: unknown, init?: RequestInit) => {
+      const sql = String((JSON.parse(String(init?.body ?? '{}')) as { sql?: string }).sql ?? '');
+      const pragmaCols = ['cid', 'name', 'type', 'notnull', 'dflt_value', 'pk'];
+      // 第一轮:sqlite_master 表名列表;第二轮:每表 PRAGMA+COUNT 各一个结果集,顺序与语句一致
+      const result = sql.includes('sqlite_master')
+        ? [{ success: true, results: { columns: ['name'], rows: [['logs'], ['users']] }, meta: {} }]
+        : [
+            { success: true, results: { columns: pragmaCols, rows: [[0, 'msg', 'TEXT', 0, null, 0]] }, meta: {} },
+            { success: true, results: { columns: ['COUNT(*)'], rows: [[7]] }, meta: {} },
+            { success: true, results: { columns: pragmaCols, rows: [[0, 'id', 'INTEGER', 1, null, 1]] }, meta: {} },
+            { success: true, results: { columns: ['COUNT(*)'], rows: [[42]] }, meta: {} },
+          ];
+      return new Response(JSON.stringify({ success: true, errors: [], messages: [], result }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+    try {
+      const res = await tablesGet(
+        ctx(db, 'http://localhost/api/d1/a1/u1/tables', undefined, { accountId: 'a1', databaseId: 'u1' }),
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        tables: {
+          name: string;
+          rowCount: number;
+          columns: { name: string; type: string; notnull: boolean; pk: boolean }[];
+        }[];
+        truncated: boolean;
+      };
+      expect(body.truncated).toBe(false);
+      expect(body.tables).toHaveLength(2);
+      // 配对错位(i*2 偏移出错)会让行数/列结构串到相邻表上——两表用不同行数和列名锁死
+      expect(body.tables[0]).toMatchObject({ name: 'logs', rowCount: 7 });
+      expect(body.tables[0].columns[0]).toMatchObject({ name: 'msg', type: 'TEXT', notnull: false, pk: false });
+      expect(body.tables[1]).toMatchObject({ name: 'users', rowCount: 42 });
+      expect(body.tables[1].columns[0]).toMatchObject({ name: 'id', type: 'INTEGER', notnull: true, pk: true });
     } finally {
       globalThis.fetch = origFetch;
     }
