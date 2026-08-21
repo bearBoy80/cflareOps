@@ -2,21 +2,21 @@
 
 [English](./README.md) | **简体中文** | [FAQ](./FAQ.zh-CN.md)
 
-一个自托管的 **Cloudflare 多账号汇总管理平台**。在一个界面里聚合管理你名下所有账号的 Zones、DNS、Workers、Pages、R2 存储、D1 数据库与用量分析，通过 Cloudflare Access 认证。
+一个自托管的 **Cloudflare 多账号汇总管理平台**。通过 API Token 或 Cloudflare OAuth 连接账号，在一个界面里聚合管理 Zones、DNS、Workers、Pages、R2 存储、D1 数据库、用量分析与邮件发送，并使用 Cloudflare Access 保护后台。
 
-技术栈为 Astro 5 + React + DaisyUI，部署于 Cloudflare Pages + D1。界面支持中英双语（页头右上角下拉切换，cookie 记忆，默认按浏览器语言）。
+技术栈为 Astro 7 + React + DaisyUI，部署于 Cloudflare Workers + D1。界面支持中英双语（页头右上角下拉切换，cookie 记忆，默认按浏览器语言）。
 
 ## 功能特性
 
-- **多账号汇总** —— 为任意数量的 Cloudflare 账号添加 API Token，校验 Token 健康状态，支持账号搜索/分页，并在单一界面统一管理。Token 加密存储，并按用户去重。
+- **多账号汇总** —— 为任意数量的 Cloudflare 账号添加 API Token，或通过带 PKCE 的 public OAuth client 授权连接；支持连接健康检查、搜索/分页与统一管理。凭证加密存储并按用户去重，OAuth access token 过期后自动刷新。
 - **概览仪表盘** —— 快速查看账号健康状态、缓存的 Zone 总数、Workers 脚本数、Pages 项目数与最近同步状态。
 - **Zones 与 DNS 管理** —— 跨账号同步 Zones，按域名/状态/账号过滤，查看 Zone 元数据，并通过 Cloudflare API 创建、更新、删除 DNS 记录。
 - **Workers 管理** —— 聚合查看多账号脚本，查看绑定/配置/版本/部署历史，支持单模块源码查看与编辑，并在 Token 具备写权限时管理 cron、secrets、workers.dev URL 与自定义域。
 - **Pages 管理** —— 浏览 Pages 项目，查看部署/日志/域名，触发部署、重试/回滚部署、清理构建缓存，并可挂载自定义域及按需创建 DNS 记录。
 - **R2 存储管理** —— 跨账号同步存储桶，支持建桶/删桶；对象浏览器带文件夹导航与分页，上传下载走预签名 S3 URL 浏览器直连（零服务器中转），下载为强制附件。对象可应用内预览——图片、文本/代码、Markdown（sandbox 隔离渲染）、PDF、视频/音频，文本类经服务端中转、上限 1 MB。桶设置涵盖公开访问（r2.dev 与自定义域）、CORS、生命周期规则，每个桶还有存储量与 A/B 类操作用量图表。
 - **D1 数据库管理** —— 跨账号同步 D1 数据库，支持创建（可选主副本区域提示）与输名确认删除。每个库有详情页：表浏览（表结构与行数）、SQL 查询控制台（参数绑定、多语句批、写语句执行前二次确认、本地查询历史）与读复制开关。
-- **用量分析** —— Workers 与 Pages Functions 调用统计，支持近 24 小时逐时快照、7 天/30 天自然日快照、表格搜索、账号过滤与趋势图。
-- **邮件发送** —— 配置已验证的发送域名，底层可选 [Resend](https://resend.com/)（存储 API Key）或 Cloudflare Email Sending（复用已有账号 Token），即可在后台撰写并发送邮件。正文支持 Markdown / HTML / 纯文本并带实时预览；每次发送（成功或失败）都会写入可审计的记录，随后可查看并按原文重新渲染。
+- **用量分析** —— Workers 与 Pages Functions 调用统计，支持近 24 小时逐时快照、7 天/30 天自然日快照、表格搜索、账号过滤与趋势图。完整区间（包括零流量时间桶）会缓存到 D1，普通切换区间不再重复请求 Cloudflare API；点击刷新时才显式重建所选区间。
+- **邮件发送** —— 配置已验证的发送域名，底层可选 [Resend](https://resend.com/)（存储 API Key）或 Cloudflare Email Sending（复用已有账号凭证），即可在后台撰写并发送邮件。Cloudflare 域名可通过 API 完成 onboarding 和所需 DNS 记录添加。正文支持 Markdown / HTML / 纯文本并带实时预览；每次发送（成功或失败）都会写入支持搜索的审计记录，随后可查看并按原文重新渲染。
 - **Cloudflare Access 登录认证** —— 使用 Cloudflare Access 保护后台，每个请求校验 `Cf-Access-Jwt-Assertion` JWT，并将认证邮箱作为用户数据隔离边界。
 - **按用户隔离** —— 所有用户数据查询都按登录邮箱过滤，一个 Access 用户无法看到另一个用户的账号与缓存。
 - **稳健同步模型** —— Cloudflare 上游数据缓存到 D1，按账号原子刷新；单个 Token 失效会记录为该账号失败，不阻塞其他账号同步。
@@ -34,9 +34,9 @@
 
 ## 技术栈
 
-- **运行时与框架** —— [Astro 5](https://astro.build/) SSR，使用 [Cloudflare adapter](https://docs.astro.build/en/guides/integrations-guide/cloudflare/) 面向 Pages Functions / workerd。
+- **运行时与框架** —— [Astro 7](https://astro.build/) SSR，使用 [Cloudflare adapter](https://docs.astro.build/en/guides/integrations-guide/cloudflare/) 面向 Cloudflare Workers / workerd。
 - **交互界面** —— [React 19](https://react.dev/) islands 承载功能面板，[Tailwind CSS 4](https://tailwindcss.com/) 与 [DaisyUI 5](https://daisyui.com/) 构建设计系统，[lucide-react](https://lucide.dev/) 提供图标，[Recharts](https://recharts.org/) 绘制用量图表。
-- **Cloudflare 平台** —— [Cloudflare Pages](https://pages.cloudflare.com/) 托管，[D1](https://developers.cloudflare.com/d1/) 作为 SQLite 存储，[Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) 提供 Zero Trust 认证。
+- **Cloudflare 平台** —— [Cloudflare Workers](https://developers.cloudflare.com/workers/) 托管，[D1](https://developers.cloudflare.com/d1/) 作为 SQLite 存储，[Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/) 提供 Zero Trust 认证。
 - **认证流水线** —— Astro middleware 使用团队 JWKS 校验 Access JWT，将认证邮箱写入 `locals.userEmail`，本地开发提供带护栏的 `DEV_MODE` 旁路，并通过 `/cdn-cgi/access/logout` 退出 Access 会话。
 - **Cloudflare 集成** —— 官方 [`cloudflare`](https://github.com/cloudflare/cloudflare-typescript) SDK 由本地 `CfClient` 统一封装；SDK 覆盖不完整的端点通过 REST 与 GraphQL fallback 处理。
 - **存储与安全** —— D1 缓存表映射 Cloudflare API 资源；API Token 使用 AES-GCM 加密，另以 SHA-256 hash 做重复 Token 检测。
@@ -45,8 +45,8 @@
 
 ## 环境要求
 
-- Node.js **>= 20.3.0**
-- 一个可用 Pages、D1、Zero Trust（Access）的 Cloudflare 账号
+- Node.js **>= 22.12.0**
+- 一个可用 Workers、D1、Zero Trust（Access）的 Cloudflare 账号
 - [Wrangler](https://developers.cloudflare.com/workers/wrangler/)（已作为开发依赖安装）
 
 ## 本地开发
@@ -85,7 +85,7 @@
    ```
    运行在 4321 端口，带实时 D1 绑定（由 `better-sqlite3` 支撑）并加载 `.dev.vars`；`DEV_MODE=true` 旁路 Cloudflare Access 供本地开发。
 
-   如需在本地验证生产构建，改用 `wrangler pages dev`：
+   如需在本地通过 Workers 运行时验证生产构建，使用 Wrangler：
    ```bash
    pnpm run build
    pnpm run preview
@@ -111,26 +111,25 @@
    ```bash
    wrangler d1 create cloudflareops-db
    ```
-   > 用 **Cloudflare Pages Git 集成**（而非 `npm run deploy`）部署？CI 构建看不到被 gitignore 的 `wrangler.toml`——请在 Pages 控制台绑定 D1（**Settings → Functions → D1 database bindings**，绑定名 `DB`）。
 2. 对远程数据库执行迁移：
    ```bash
    npm run db:migrate:remote
    ```
-3. 在 Cloudflare **Zero Trust** 控制台创建 Self-hosted **Access** 应用，域名指向 Pages 域名。由此拿到应用需要的两个 Access 值：
+3. 在 Cloudflare **Zero Trust** 控制台创建 Self-hosted **Access** 应用，域名指向 Worker 域名或绑定的自定义域。由此拿到应用需要的两个 Access 值：
 
    | 变量 | 在哪里取值 |
    | --- | --- |
    | `CF_ACCESS_TEAM_DOMAIN` | 你的团队域名 `<你的团队>.cloudflareaccess.com`。位置：Zero Trust → **Settings → Custom Pages**（或你登录 Zero Trust 时的地址）。填完整主机名，如 `acme.cloudflareaccess.com`，**不带** `https://`。 |
    | `CF_ACCESS_AUD` | Zero Trust → **Access → Applications → （你的应用）→ Overview**，字段 **Application Audience (AUD) Tag**，一串长十六进制。 |
 
-4. 在 **Pages 项目**设置这三个运行时变量（生产环境**不要**设置 `DEV_MODE`）。两种方式：
+4. 在 **Worker** 上设置这三个运行时值（生产环境**不要**设置 `DEV_MODE`）。`ENCRYPTION_KEY` 必须作为 Secret；Access 两项可用 Secret 或 Wrangler 普通变量：
 
-   - **控制台：** Workers & Pages → 你的项目 → **Settings → Variables and Secrets** → 为 **Production** 环境添加。`ENCRYPTION_KEY`（及可选的 `CF_ACCESS_AUD`）标记为**加密（Secret）**；`CF_ACCESS_TEAM_DOMAIN` 是公开主机名，可作普通变量。
+   - **控制台：** Compute（Workers）→ 你的 Worker → **Settings → Variables and Secrets**。
    - **命令行：**
      ```bash
-     npx wrangler pages secret put ENCRYPTION_KEY
-     npx wrangler pages secret put CF_ACCESS_TEAM_DOMAIN
-     npx wrangler pages secret put CF_ACCESS_AUD
+     npx wrangler secret put ENCRYPTION_KEY
+     npx wrangler secret put CF_ACCESS_TEAM_DOMAIN
+     npx wrangler secret put CF_ACCESS_AUD
      ```
 
    | 变量 | 值 |
@@ -139,16 +138,35 @@
    | `CF_ACCESS_TEAM_DOMAIN` | 如 `acme.cloudflareaccess.com` |
    | `CF_ACCESS_AUD` | 第 3 步的 AUD 标签 |
 
-   > **重要：** `CF_ACCESS_TEAM_DOMAIN` 与 `CF_ACCESS_AUD` 是应用的认证闸门。生产环境缺任一项 → 返回 **500 "Cloudflare Access not configured"**；请求不带有效 Access JWT → 返回 **403**。另外确保 Access 应用的域名与 Pages 域名一致，否则 JWT 的 audience/issuer 校验会失败。
-5. 部署：
+   > **重要：** `CF_ACCESS_TEAM_DOMAIN` 与 `CF_ACCESS_AUD` 是应用的认证闸门。生产环境缺任一项 → 返回 **500 "Cloudflare Access not configured"**；请求不带有效 Access JWT → 返回 **403**。另外确保 Access 应用的域名与 Worker 域名或自定义域一致，否则 JWT 的 audience/issuer 校验会失败。
+5. 可选：在 Cloudflare **Manage Account → OAuth clients** 注册 self-managed OAuth client，以启用账号页的“用 Cloudflare 授权”：
+
+   - 客户端类型：public client，不使用 client secret。
+   - Token endpoint authentication method：`None`。
+   - PKCE：必须启用，方法为 `S256`。
+   - Grant types：`authorization_code`、`refresh_token`；Response type：`code`。
+   - Redirect URI：`https://<你的 Worker 域名>/api/accounts/oauth/callback`。
+   - OAuth Client 允许的 scopes 必须完整包含 `CF_OAUTH_SCOPES` 请求的每一项；需要 refresh token 时加入 `offline_access`。不要添加不受支持的 OIDC `openid`，也不要使用无效的 `account.read`。
+   - 邮件域名 onboarding 需要 `email-sending.read` 与 `email-sending.write`，应用会自动追加这两项必需权限。
+
+   配置以下运行时变量。未设置 `CF_OAUTH_CLIENT_ID` 时 OAuth 入口自动隐藏，手动 API Token 方式仍可使用。
+
+   | 变量 | 值 |
+   | --- | --- |
+   | `CF_OAUTH_CLIENT_ID` | OAuth client ID |
+   | `CF_OAUTH_REDIRECT_URI` | 与注册值完全一致的回调地址；缺省时按请求 origin 推导 |
+   | `CF_OAUTH_SCOPES` | 与 OAuth Client 允许列表一致、以空格分隔的 Cloudflare scope ID |
+
+   完整 scope 示例见 [`.dev.vars.example`](./.dev.vars.example)。access token 与 refresh token 都会加密保存到 D1，access token 过期后自动刷新。
+6. 部署：
    ```bash
    npm run deploy
    ```
-   改动变量后需重新部署（或在控制台 redeploy）才会生效。
+   该命令先构建 Astro，再通过 `wrangler deploy` 发布。使用仓库自动部署时，可在 Workers Builds 中设置构建命令 `npm run build`、部署命令 `npx wrangler deploy`。
 
-## 账号 Token 要求
+## 账号授权要求
 
-为每个要管理的 Cloudflare 账号创建 API Token。最小权限：
+账号可以通过手动 API Token 或上述可选 OAuth client 连接。两种方式都由实际授予的权限决定功能范围。建议的最小权限：
 
 - **Zones / DNS：** Zone → Zone: Read；Zone → DNS: Edit
 - **Workers & Pages：** Account → Account Settings: Read（解析 Token 归属账号）、Account → Workers Scripts: Read、Account → Cloudflare Pages: Read
@@ -172,8 +190,8 @@
 | --- | --- |
 | `npm run dev` | Astro 开发服务器（`DEV_MODE` 旁路 Access） |
 | `npm run build` | 生产构建 |
-| `npm run preview` | 带 D1 绑定的 `wrangler pages dev ./dist` |
-| `npm run deploy` | 构建并部署到 Cloudflare Pages |
+| `npm run preview` | 使用 `wrangler dev` 预览生产构建 |
+| `npm run deploy` | 构建并部署到 Cloudflare Workers |
 | `npm run typecheck` | `astro check` + `tsc --noEmit` |
 | `npm run lint` | 运行 Biome lint |
 | `npm run format` | 用 Biome 格式化文件 |
