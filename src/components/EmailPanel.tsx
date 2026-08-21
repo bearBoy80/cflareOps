@@ -1,5 +1,5 @@
-import { Mail, Pencil, Plus, Send, Trash2 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { Mail, Pencil, Plus, Search, Send, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { type Locale, type MessageKey, t } from '@/i18n';
 import { relativeTime } from '@/lib/time';
 import type { EmailFormat } from '@/server/email/types';
@@ -23,11 +23,16 @@ const ERROR_CODE_KEYS: Record<string, MessageKey> = {
   fieldsRequired: 'email.errFieldsRequired',
   invalidDomain: 'email.errInvalidDomain',
   duplicateDomain: 'email.errDuplicateDomain',
+  domainNotAuthorized: 'email.errDomainNotAuthorized',
+  emailOnboardForbidden: 'email.errOnboardForbidden',
   domainNotFound: 'email.errDomainNotFound',
   invalidRecipient: 'email.errInvalidRecipient',
+  tooManyRecipients: 'email.errTooManyRecipients',
   fromDomainMismatch: 'email.errFromDomainMismatch',
   renderFailed: 'email.errRenderFailed',
   emailSendForbidden: 'email.errScopeMissing',
+  sendInProgress: 'email.errSendInProgress',
+  sendAlreadyFailed: 'email.errSendAlreadyFailed',
   logNotFound: 'email.errLogNotFound',
   accountNotFound: 'accounts.errNotFound',
 };
@@ -104,6 +109,7 @@ function SendTab({ locale, domains }: { locale: Locale; domains: DomainItem[] })
   const [format, setFormat] = useState<EmailFormat>('markdown');
   const [content, setContent] = useState('');
   const [sending, setSending] = useState(false);
+  const requestId = useRef<string | null>(null);
   const { showToast } = useToast();
   const apiErrorText = useApiErrorText(locale);
 
@@ -113,6 +119,7 @@ function SendTab({ locale, domains }: { locale: Locale; domains: DomainItem[] })
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!selected) return;
+    requestId.current ??= crypto.randomUUID();
     setSending(true);
     try {
       const res = await fetch('/api/email/send', {
@@ -128,14 +135,25 @@ function SendTab({ locale, domains }: { locale: Locale; domains: DomainItem[] })
           subject,
           format,
           content,
+          requestId: requestId.current,
         }),
       });
+      const data = (await res.json().catch(() => null)) as {
+        error?: string;
+        code?: string;
+        status?: 'sent' | 'partial' | 'failed';
+        logged?: boolean;
+      } | null;
+      // 收到服务器响应代表本次结果确定；下次点击应是一次新的发送。
+      requestId.current = null;
       if (res.ok) {
-        showToast(t(locale, 'email.sent'), 'success');
-        // 保留收件人与主题便于连发，清空正文
-        setContent('');
+        if (data?.status === 'failed') showToast(t(locale, 'email.sendBounced'), 'error');
+        else if (data?.status === 'partial') showToast(t(locale, 'email.sendPartial'), 'error');
+        else if (data?.logged === false) showToast(t(locale, 'email.sentLogFailed'), 'error');
+        else showToast(t(locale, 'email.sent'), 'success');
+        // 已送达或部分送达时清空正文；全部永久退信时保留内容，便于修正地址。
+        if (data?.status !== 'failed') setContent('');
       } else {
-        const data = (await res.json().catch(() => null)) as { error?: string; code?: string } | null;
         showToast(apiErrorText(data), 'error');
       }
     } catch {
@@ -447,8 +465,12 @@ function DomainsTab({ locale, onChanged }: { locale: Locale; onChanged: () => Pr
         body: JSON.stringify({ domain: form.domain.trim(), ...domainBody(form) }),
       });
       if (res.ok) {
+        const provider = form.provider;
         setForm(EMPTY_FORM);
-        showToast(t(locale, 'email.domainAdded'), 'success');
+        showToast(
+          t(locale, provider === 'cloudflare' ? 'email.domainAddedCloudflare' : 'email.domainAdded'),
+          'success',
+        );
         await reload();
         await onChanged();
       } else {
@@ -529,7 +551,7 @@ function DomainsTab({ locale, onChanged }: { locale: Locale; onChanged: () => Pr
           <DomainFields locale={locale} value={form} onChange={setForm} accounts={accounts} editing={false} />
           <div className="mt-2">
             <button className="btn btn-primary btn-sm whitespace-nowrap" disabled={busy} type="submit">
-              <Plus size={14} strokeWidth={1.75} />
+              {busy ? <span className="loading loading-spinner loading-xs" /> : <Plus size={14} strokeWidth={1.75} />}
               {t(locale, 'email.add')}
             </button>
           </div>
@@ -656,6 +678,8 @@ function LogTab({ locale }: { locale: Locale }) {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<LogDetail | null>(null);
   const { showToast } = useToast();
@@ -663,9 +687,17 @@ function LogTab({ locale }: { locale: Locale }) {
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPage(1);
+      setSearch(searchInput);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
   const reload = useCallback(async () => {
     try {
-      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+      const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize), search });
       const res = await fetch(`/api/email/log?${params.toString()}`);
       if (!res.ok) return;
       const data = (await res.json()) as { logs: LogItem[]; total: number };
@@ -674,7 +706,7 @@ function LogTab({ locale }: { locale: Locale }) {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize]);
+  }, [page, pageSize, search]);
 
   useEffect(() => {
     void reload();
@@ -697,7 +729,20 @@ function LogTab({ locale }: { locale: Locale }) {
 
   return (
     <div className="card border border-base-300 bg-base-100 p-4">
-      <h2 className="mb-3 font-semibold">{t(locale, 'email.logTitle')}</h2>
+      <div className="mb-3 flex flex-wrap items-center gap-3">
+        <h2 className="font-semibold">{t(locale, 'email.logTitle')}</h2>
+        <label className="input input-bordered input-sm flex w-72 max-w-full items-center gap-2">
+          <Search size={14} strokeWidth={1.75} className="shrink-0 opacity-40" />
+          <input
+            type="search"
+            className="min-w-0 grow"
+            placeholder={t(locale, 'email.logSearchPlaceholder')}
+            value={searchInput}
+            maxLength={200}
+            onChange={(event) => setSearchInput(event.target.value)}
+          />
+        </label>
+      </div>
       {loading ? (
         <div className="overflow-x-auto">
           <table className="table table-sm">
@@ -713,7 +758,9 @@ function LogTab({ locale }: { locale: Locale }) {
           </table>
         </div>
       ) : total === 0 ? (
-        <p className="py-8 text-center text-sm opacity-60">{t(locale, 'email.emptyLog')}</p>
+        <p className="py-8 text-center text-sm opacity-60">
+          {t(locale, search ? 'email.noMatchingLogs' : 'email.emptyLog')}
+        </p>
       ) : (
         <>
           <div className="overflow-x-auto">
@@ -745,10 +792,25 @@ function LogTab({ locale }: { locale: Locale }) {
                     <td>
                       <span
                         className={`badge badge-sm shrink-0 whitespace-nowrap ${
-                          log.status === 'sent' ? 'badge-success' : 'badge-error'
+                          log.status === 'sent'
+                            ? 'badge-success'
+                            : log.status === 'partial'
+                              ? 'badge-warning'
+                              : log.status === 'pending'
+                                ? 'badge-info'
+                                : 'badge-error'
                         }`}
                       >
-                        {t(locale, log.status === 'sent' ? 'email.statusSent' : 'email.statusFailed')}
+                        {t(
+                          locale,
+                          log.status === 'sent'
+                            ? 'email.statusSent'
+                            : log.status === 'partial'
+                              ? 'email.statusPartial'
+                              : log.status === 'pending'
+                                ? 'email.statusPending'
+                                : 'email.statusFailed',
+                        )}
                       </span>
                     </td>
                   </tr>

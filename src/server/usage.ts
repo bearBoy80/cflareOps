@@ -70,9 +70,11 @@ interface BackfillCore {
   bucketStartISO: (bucket: string) => string; // 桶起始瞬间
   bucketEndISO: (bucket: string) => string; // 桶结束瞬间（下一桶起点）
   cleanupBefore?: string; // 删除 bucketCol < 此值的行（当前账号）
-  // 覆盖标记表：提供时用它（而非 data 表）判定「缺失」，并为每个已抓取的桶写一条覆盖标记。
+  // 覆盖标记表：用它（而非 data 表）判定「缺失」，并为每个已抓取的桶写一条覆盖标记。
   // 让零流量桶（data 表无行）也算「已回填」，避免每次访问都重新 fan-out。随 cleanupBefore 同步清理。
-  coverageTable?: string;
+  coverageTable: 'usage_daily_covered' | 'usage_hourly_covered';
+  /** 显式刷新：忽略覆盖判定，重新抓取并原子替换全部目标桶。 */
+  force?: boolean;
 }
 
 /** 参数化回填核：daily/hourly 共用。按账号探测缺失桶 → 只补缺失桶 → 分块原子批写；
@@ -87,7 +89,8 @@ async function backfillSnapshots(
   const failures: { accountId: string; error: string }[] = [];
   const { accounts } = await listAccounts(db, ownerEmail);
   if (accounts.length === 0) return { failures };
-  const psnMap = await buildPsnMap(db, ownerEmail);
+  // 命中覆盖缓存时完全跳过 Pages JSON 映射扫描；有缺失桶时才按请求惰性构建一次。
+  let psnMapPromise: Promise<Map<string, string>> | undefined;
   const syncedAt = now.toISOString();
   const { table, bucketCol, targets } = core;
 
@@ -101,11 +104,11 @@ async function backfillSnapshots(
      (${bucketCol}, kind, account_id, cf_account_id, name, requests, errors, synced_at)
      VALUES (?, 'pages', ?, ?, ?, ?, 0, ?)`,
   );
-  const insertCovered = core.coverageTable
-    ? db.prepare(`INSERT OR REPLACE INTO ${core.coverageTable} (account_id, ${bucketCol}, synced_at) VALUES (?, ?, ?)`)
-    : null;
-  // 覆盖标记表提供时用它判定缺失（含零流量桶）；否则回退到 data 表（daily 现状）
-  const detectTable = core.coverageTable ?? table;
+  const insertCovered = db.prepare(
+    `INSERT OR REPLACE INTO ${core.coverageTable} (account_id, ${bucketCol}, synced_at) VALUES (?, ?, ?)`,
+  );
+  const deleteBucket = db.prepare(`DELETE FROM ${table} WHERE account_id = ? AND ${bucketCol} = ?`);
+  const deleteCovered = db.prepare(`DELETE FROM ${core.coverageTable} WHERE account_id = ? AND ${bucketCol} = ?`);
 
   const limit = pLimit(CONCURRENCY);
   await Promise.all(
@@ -113,23 +116,34 @@ async function backfillSnapshots(
       limit(async () => {
         try {
           const placeholders = targets.map(() => '?').join(',');
-          const { results } = await db
-            .prepare(
-              `SELECT DISTINCT ${bucketCol} AS b FROM ${detectTable} WHERE account_id = ? AND ${bucketCol} IN (${placeholders})`,
-            )
-            .bind(acct.id, ...targets)
-            .all<{ b: string }>();
+          // data 表没有行可能表示零流量，也可能表示尚未抓取，不能据此判断缓存完整性。
+          // daily/hourly 都使用独立覆盖表；只有 Workers 与 Pages 两类 CF 查询均成功才落标记。
+          const detectSql = `SELECT DISTINCT ${bucketCol} AS b FROM ${core.coverageTable}
+                             WHERE account_id = ? AND ${bucketCol} IN (${placeholders})`;
+          const { results } = core.force
+            ? { results: [] as { b: string }[] }
+            : await db
+                .prepare(detectSql)
+                .bind(acct.id, ...targets)
+                .all<{ b: string }>();
           const have = new Set(results.map((r) => r.b));
           const missing = targets.filter((t) => !have.has(t));
           const missingSet = new Set(missing);
           const byBucket = new Map<string, DbStatement[]>();
-          for (const b of missing) byBucket.set(b, []);
+          // 缺失桶可能已有单一 kind 或陈旧数据；先删后写，删除与新快照同批提交。
+          // 上游请求若失败，代码不会走到 batch，旧缓存仍完整保留。
+          for (const b of missing) {
+            byBucket.set(b, [deleteBucket.bind(acct.id, b), deleteCovered.bind(acct.id, b)]);
+          }
 
           if (missing.length > 0) {
+            psnMapPromise ??= buildPsnMap(db, ownerEmail);
+            const psnMap = await psnMapPromise;
             const sinceISO = core.bucketStartISO(missing[0]);
             const untilISO = core.bucketEndISO(missing[missing.length - 1]);
             const pa = await clientFor(acct.id);
             const cfAccounts = await pa.listCfAccounts();
+            const pageStatements = new Map<string, DbStatement[]>();
             for (const cf of cfAccounts) {
               const [w, p] = await Promise.all([
                 pa.queryWorker(cf.id, sinceISO, untilISO),
@@ -146,17 +160,20 @@ async function backfillSnapshots(
               for (const row of p) {
                 if (!missingSet.has(row.bucket)) continue;
                 const projectName = psnMap.get(`${cf.id}/${row.scriptName}`);
+                // 已删除项目或尚未同步的项目无法生成可靠详情链接，暂不展示该行；
+                // 但 CF 查询本身已经成功，不能因此让整个日期永久重复抓取。
                 if (!projectName) continue;
-                byBucket
-                  .get(row.bucket)!
-                  .push(insertPages.bind(row.bucket, acct.id, cf.id, projectName, row.requests, syncedAt));
+                const statements = pageStatements.get(row.bucket) ?? [];
+                statements.push(insertPages.bind(row.bucket, acct.id, cf.id, projectName, row.requests, syncedAt));
+                pageStatements.set(row.bucket, statements);
               }
             }
+            for (const [b, statements] of pageStatements) {
+              byBucket.get(b)!.push(...statements);
+            }
             // 每个已抓取的缺失桶写一条覆盖标记（零流量桶也算已覆盖，随其桶批原子提交）
-            if (insertCovered) {
-              for (const b of missing) {
-                byBucket.get(b)!.push(insertCovered.bind(acct.id, b, syncedAt));
-              }
+            for (const b of missing) {
+              byBucket.get(b)!.push(insertCovered.bind(acct.id, b, syncedAt));
             }
           }
 
@@ -185,13 +202,11 @@ async function backfillSnapshots(
                 .prepare(`DELETE FROM ${table} WHERE account_id = ? AND ${bucketCol} < ?`)
                 .bind(acct.id, core.cleanupBefore),
             ];
-            if (core.coverageTable) {
-              cleanup.push(
-                db
-                  .prepare(`DELETE FROM ${core.coverageTable} WHERE account_id = ? AND ${bucketCol} < ?`)
-                  .bind(acct.id, core.cleanupBefore),
-              );
-            }
+            cleanup.push(
+              db
+                .prepare(`DELETE FROM ${core.coverageTable} WHERE account_id = ? AND ${bucketCol} < ?`)
+                .bind(acct.id, core.cleanupBefore),
+            );
             // 保证末批不超过 CHUNK_LIMIT（cleanup 语句摊入时先冲掉将满的当前批）
             if (chunk.length > 0 && chunk.length + cleanup.length > CHUNK_LIMIT) await flush();
             chunk.push(...cleanup);
@@ -209,7 +224,7 @@ async function backfillSnapshots(
 /**
  * 惰性回填：把 owner 各账号最近 days 个完整自然日中缺失的天补进 usage_daily。
  * 按账号粒度探测缺失（新账号不被其他账号的已有天遮蔽）；今天/窗口外的行丢弃；
- * 0 调用的天无行落库、下次会重查（接受的取舍，见 spec）。单账号失败进 failures。
+ * 零流量日期通过 usage_daily_covered 落覆盖标记，后续无需重复请求 CF。单账号失败进 failures。
  */
 export async function ensureUsageSnapshots(
   db: Db,
@@ -217,6 +232,7 @@ export async function ensureUsageSnapshots(
   days: number,
   clientFor: (accountId: string) => Promise<UsageClient>,
   now: Date = new Date(),
+  opts: { force?: boolean } = {},
 ): Promise<{ failures: { accountId: string; error: string }[] }> {
   return backfillSnapshots(
     db,
@@ -246,6 +262,8 @@ export async function ensureUsageSnapshots(
       targets: targetDays(days, now),
       bucketStartISO: (b) => `${b}T00:00:00Z`,
       bucketEndISO: (b) => new Date(Date.parse(`${b}T00:00:00Z`) + DAY_MS).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      coverageTable: 'usage_daily_covered',
+      force: opts.force,
     },
     now,
   );
@@ -261,6 +279,7 @@ export async function ensureUsageHourlySnapshots(
   ownerEmail: string,
   clientFor: (accountId: string) => Promise<UsageHourlyClient>,
   now: Date = new Date(),
+  opts: { force?: boolean } = {},
 ): Promise<{ failures: { accountId: string; error: string }[] }> {
   const targets = targetHours(now);
   // 清理阈值 = 最老目标整点再往前 1 小时（保 25h、窗口显示 24h）
@@ -284,6 +303,7 @@ export async function ensureUsageHourlySnapshots(
       bucketEndISO: (b) => new Date(Date.parse(b) + HOUR_MS).toISOString().replace(/\.\d{3}Z$/, 'Z'),
       cleanupBefore,
       coverageTable: 'usage_hourly_covered',
+      force: opts.force,
     },
     now,
   );

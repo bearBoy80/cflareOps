@@ -9,6 +9,13 @@ export interface AccountRow {
   status: string;
   last_check: string | null;
   last_error: string | null;
+  auth_type: string;
+  oauth_client_id: string | null;
+  oauth_refresh_encrypted: string | null;
+  oauth_expires_at: string | null;
+  oauth_scope: string | null;
+  oauth_sub: string | null;
+  oauth_refresh_lock_until: string | null;
 }
 
 export interface AccountPublic {
@@ -17,6 +24,7 @@ export interface AccountPublic {
   status: string;
   lastCheck: string | null;
   lastError: string | null;
+  authType: string;
 }
 
 function now(): string {
@@ -38,6 +46,131 @@ export async function insertAccount(
       'INSERT INTO cf_accounts (id, owner_email, name, token_encrypted, token_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
     )
     .bind(input.id, input.ownerEmail, input.name, input.tokenEncrypted, input.tokenHash, ts, ts)
+    .run();
+}
+
+export async function upsertOAuthAccount(
+  db: Db,
+  input: {
+    id: string;
+    ownerEmail: string;
+    name: string;
+    tokenEncrypted: string;
+    tokenHash: string;
+    clientId: string;
+    refreshEncrypted: string;
+    expiresAt: string;
+    scope: string | null;
+    sub: string | null;
+    replaceId?: string;
+  },
+): Promise<{ id: string; created: boolean }> {
+  // OAuth 去重键由回调层根据 client id + 可见 CF 账号集合生成。
+  // access/refresh token 会轮换，不能直接拿它们做稳定 hash。再次授权同一连接时
+  // 原地更新 token/scope，保留账号 ID 及其 Zone/邮件域名等关联数据。
+  const existing = await db
+    .prepare(
+      input.replaceId
+        ? 'SELECT id, auth_type FROM cf_accounts WHERE owner_email = ? AND id = ?'
+        : 'SELECT id, auth_type FROM cf_accounts WHERE owner_email = ? AND token_hash = ?',
+    )
+    .bind(input.ownerEmail, input.replaceId ?? input.tokenHash)
+    .first<{ id: string; auth_type: string }>();
+  const ts = now();
+  if (input.replaceId && !existing) throw new Error('OAuth account to reconnect no longer exists');
+  if (existing) {
+    if (existing.auth_type !== 'oauth') throw new Error('account with this token already exists');
+    await db
+      .prepare(
+        `UPDATE cf_accounts SET
+           name = ?, token_encrypted = ?, token_hash = ?, status = 'active', last_check = ?, last_error = NULL,
+           oauth_client_id = ?, oauth_refresh_encrypted = ?, oauth_expires_at = ?, oauth_scope = ?, oauth_sub = ?,
+           oauth_refresh_lock_until = NULL,
+           updated_at = ?
+         WHERE id = ? AND owner_email = ?`,
+      )
+      .bind(
+        input.name,
+        input.tokenEncrypted,
+        input.tokenHash,
+        ts,
+        input.clientId,
+        input.refreshEncrypted,
+        input.expiresAt,
+        input.scope,
+        input.sub,
+        ts,
+        existing.id,
+        input.ownerEmail,
+      )
+      .run();
+    return { id: existing.id, created: false };
+  }
+  await db
+    .prepare(
+      `INSERT INTO cf_accounts (
+         id, owner_email, name, token_encrypted, token_hash, status, last_check,
+         auth_type, oauth_client_id, oauth_refresh_encrypted, oauth_expires_at, oauth_scope, oauth_sub,
+         created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, 'active', ?, 'oauth', ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      input.id,
+      input.ownerEmail,
+      input.name,
+      input.tokenEncrypted,
+      input.tokenHash,
+      ts,
+      input.clientId,
+      input.refreshEncrypted,
+      input.expiresAt,
+      input.scope,
+      input.sub,
+      ts,
+      ts,
+    )
+    .run();
+  return { id: input.id, created: true };
+}
+
+/** OAuth 续期回写:按 owner_email + id 更新 access/refresh/过期时间。 */
+export async function updateOAuthTokens(
+  db: Db,
+  ownerEmail: string,
+  id: string,
+  input: { tokenEncrypted: string; refreshEncrypted: string; expiresAt: string },
+): Promise<void> {
+  await db
+    .prepare(
+      'UPDATE cf_accounts SET token_encrypted = ?, oauth_refresh_encrypted = ?, oauth_expires_at = ?, oauth_refresh_lock_until = NULL, updated_at = ? WHERE id = ? AND owner_email = ?',
+    )
+    .bind(input.tokenEncrypted, input.refreshEncrypted, input.expiresAt, now(), id, ownerEmail)
+    .run();
+}
+
+export async function tryClaimOAuthRefresh(
+  db: Db,
+  ownerEmail: string,
+  id: string,
+  expectedExpiresAt: string | null,
+  nowIso: string,
+  lockUntil: string,
+): Promise<boolean> {
+  const result = (await db
+    .prepare(
+      `UPDATE cf_accounts SET oauth_refresh_lock_until = ?
+       WHERE id = ? AND owner_email = ? AND oauth_expires_at IS ?
+         AND (oauth_refresh_lock_until IS NULL OR oauth_refresh_lock_until < ?)`,
+    )
+    .bind(lockUntil, id, ownerEmail, expectedExpiresAt, nowIso)
+    .run()) as { changes?: number; meta?: { changes?: number } };
+  return (result.meta?.changes ?? result.changes ?? 0) > 0;
+}
+
+export async function releaseOAuthRefresh(db: Db, ownerEmail: string, id: string): Promise<void> {
+  await db
+    .prepare('UPDATE cf_accounts SET oauth_refresh_lock_until = NULL WHERE id = ? AND owner_email = ?')
+    .bind(id, ownerEmail)
     .run();
 }
 
@@ -72,16 +205,24 @@ export async function listAccounts(
 
   const { results } = await db
     .prepare(
-      `SELECT id, name, status, last_check, last_error FROM cf_accounts ${where} ORDER BY created_at LIMIT ? OFFSET ?`,
+      `SELECT id, name, status, last_check, last_error, auth_type FROM cf_accounts ${where} ORDER BY created_at LIMIT ? OFFSET ?`,
     )
     .bind(...params, pageSize, (page - 1) * pageSize)
-    .all<{ id: string; name: string; status: string; last_check: string | null; last_error: string | null }>();
+    .all<{
+      id: string;
+      name: string;
+      status: string;
+      last_check: string | null;
+      last_error: string | null;
+      auth_type: string;
+    }>();
   const accounts = results.map((r) => ({
     id: r.id,
     name: r.name,
     status: r.status,
     lastCheck: r.last_check,
     lastError: r.last_error,
+    authType: r.auth_type,
   }));
   return { accounts, total };
 }
@@ -137,12 +278,15 @@ export async function updateAccount(
 
 export async function updateAccountStatus(
   db: Db,
+  ownerEmail: string,
   id: string,
   status: 'active' | 'error',
   error?: string,
 ): Promise<void> {
   await db
-    .prepare('UPDATE cf_accounts SET status = ?, last_check = ?, last_error = ?, updated_at = ? WHERE id = ?')
-    .bind(status, now(), error ?? null, now(), id)
+    .prepare(
+      'UPDATE cf_accounts SET status = ?, last_check = ?, last_error = ?, updated_at = ? WHERE id = ? AND owner_email = ?',
+    )
+    .bind(status, now(), error ?? null, now(), id, ownerEmail)
     .run();
 }

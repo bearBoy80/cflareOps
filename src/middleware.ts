@@ -3,6 +3,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { localeMiddleware } from './i18n/middleware';
 import { shouldBypassAuth } from './server/auth';
 import { apiErrorResponse } from './server/context';
+import { runtimeEnv } from './server/env';
 
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
@@ -22,7 +23,7 @@ const errorBoundary = defineMiddleware(async (context, next) => {
 });
 
 const accessMiddleware = defineMiddleware(async (context, next) => {
-  const env = context.locals.runtime.env;
+  const env = runtimeEnv(context.locals);
   if (shouldBypassAuth(env)) {
     console.warn('[auth] DEV_MODE bypass active — do not use in production');
     context.locals.userEmail = env.DEV_USER_EMAIL ?? 'dev@localhost';

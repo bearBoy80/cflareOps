@@ -197,7 +197,7 @@ export default function UsagePanel({ locale, initialTab }: { locale: Locale; ini
   }, [searchInput]);
 
   const reload = useCallback(
-    async (quiet = false) => {
+    async (quiet = false, forceRefresh = false) => {
       if (!quiet) setLoading(true);
       setError(null);
       try {
@@ -210,6 +210,7 @@ export default function UsagePanel({ locale, initialTab }: { locale: Locale; ini
           accountId,
         });
         if (range === '24h') params.set('todayStart', todayStartUTC(locale));
+        if (forceRefresh) params.set('refresh', '1');
         const res = await fetch(`/api/usage/invocations?${params.toString()}`);
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -265,7 +266,7 @@ export default function UsagePanel({ locale, initialTab }: { locale: Locale; ini
 
   const refreshAll = async () => {
     setRefreshing(true);
-    await reload(true);
+    await reload(true, true);
     setRefreshing(false);
   };
 

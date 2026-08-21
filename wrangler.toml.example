@@ -1,10 +1,15 @@
 name = "cloudflareops"
 compatibility_date = "2026-06-01"
 compatibility_flags = ["nodejs_compat"]
-pages_build_output_dir = "./dist"
-
 [[d1_databases]]
 binding = "DB"
 database_name = "cloudflareops-db"
 # Run `wrangler d1 create cloudflareops-db` and paste the returned UUID here.
 database_id = "REPLACE_AFTER_wrangler_d1_create"
+
+# 「用 Cloudflare 授权」连接账号（可选，public + PKCE client，无 secret）。
+# 生产用 Pages 环境变量/Secrets 配置；缺省时该入口不出现，仅手动 Token 可用。
+# [vars]
+# CF_OAUTH_CLIENT_ID = "your-oauth-client-id"
+# CF_OAUTH_REDIRECT_URI = "https://your-app.pages.dev/api/accounts/oauth/callback"
+# CF_OAUTH_SCOPES = "d1.read d1.write page.read page.write workers-scripts.edit workers-kv-storage.read workers-kv-storage.write workers-r2.read workers-r2.write workers-routes.read workers-routes.write workers-scripts.bind workers-scripts.read workers-scripts.write account-dns-settings.read account-dns-settings.write dns-firewall.read dns-firewall.write dns.read dns-view.read dns-view.write dns.write zone-dns-settings.read zone-dns-settings.write zone.read zone-settings.read zone-settings.write zone.write account-waf.read account-waf.write bot-management-feedback.read bot-management-feedback.write bot-management.read bot-management.write ddos-protection.read ddos-protection.write firewall-services.read firewall-services.write page-rules.read page-rules.write account-analytics.read analytics.read logs.read load-balancers-account.read load-balancers-account.write load-balancers.read load-balancers.write load-balancing-monitors-and-pools.read load-balancing-monitors-and-pools.write account-ssl-and-certificates.write cache.purge cache-settings.write ssl-and-certificates.read ssl-and-certificates.write account-api-gateway.write account-api-gateway.read account-settings.read account-settings.write notifications.read notifications.write email-sending.read email-sending.write offline_access"

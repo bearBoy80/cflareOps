@@ -7,3 +7,13 @@ ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000
 # 两者同时存在时旁路会被禁用导致本地 403。生产环境通过 Pages secrets 配置它们。
 # CF_ACCESS_TEAM_DOMAIN=yourteam.cloudflareaccess.com
 # CF_ACCESS_AUD=your-access-application-aud-tag
+
+# 「用 Cloudflare 授权」连接账号（可选）。在 Cloudflare 控制台 Manage Account > OAuth clients
+# 注册一个 public client：Token endpoint auth method 选 None、启用 PKCE(S256)、grant types 勾选
+# authorization_code + refresh_token、response types 勾选 code、redirect URL 填下面 CF_OAUTH_REDIRECT_URI。
+# scopes 须与 OAuth client 中勾选的权限一致，使用截图中的点号 ID。无 client secret。
+# 未设置 client id 时「用 Cloudflare 授权」入口不出现，仅手动 Token 方式可用。
+# CF_OAUTH_CLIENT_ID=your-oauth-client-id
+# CF_OAUTH_REDIRECT_URI=http://localhost:4321/api/accounts/oauth/callback
+# 须与 OAuth Client 中允许的 scope 一致；代码会确保追加 email-sending.read/write。
+# CF_OAUTH_SCOPES=d1.read d1.write page.read page.write workers-scripts.edit workers-kv-storage.read workers-kv-storage.write workers-r2.read workers-r2.write workers-routes.read workers-routes.write workers-scripts.bind workers-scripts.read workers-scripts.write account-dns-settings.read account-dns-settings.write dns-firewall.read dns-firewall.write dns.read dns-view.read dns-view.write dns.write zone-dns-settings.read zone-dns-settings.write zone.read zone-settings.read zone-settings.write zone.write account-waf.read account-waf.write bot-management-feedback.read bot-management-feedback.write bot-management.read bot-management.write ddos-protection.read ddos-protection.write firewall-services.read firewall-services.write page-rules.read page-rules.write account-analytics.read analytics.read logs.read load-balancers-account.read load-balancers-account.write load-balancers.read load-balancers.write load-balancing-monitors-and-pools.read load-balancing-monitors-and-pools.write account-ssl-and-certificates.write cache.purge cache-settings.write ssl-and-certificates.read ssl-and-certificates.write account-api-gateway.write account-api-gateway.read account-settings.read account-settings.write notifications.read notifications.write email-sending.read email-sending.write offline_access

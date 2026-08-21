@@ -1,7 +1,7 @@
 import pLimit from 'p-limit';
+import { ACCOUNT_TOKEN_COLUMNS, type AccountTokenRow, cfClientForAccount, resolveAccountToken } from './cf/account';
 import { CfClient } from './cf/client';
 import { NotFoundError } from './context';
-import { decryptSecret } from './crypto';
 import { getAccount, updateAccountStatus } from './db/accounts';
 import type { Db, DbStatement } from './db/types';
 
@@ -45,7 +45,7 @@ export async function syncWorkersPages(
   accountId?: string,
 ): Promise<{ scripts: number; projects: number; failures: { accountId: string; error: string }[] }> {
   const params: unknown[] = [ownerEmail];
-  let sql = 'SELECT id, token_encrypted FROM cf_accounts WHERE owner_email = ?';
+  let sql = `SELECT ${ACCOUNT_TOKEN_COLUMNS} FROM cf_accounts WHERE owner_email = ?`;
   if (accountId) {
     sql += ' AND id = ?';
     params.push(accountId);
@@ -53,7 +53,7 @@ export async function syncWorkersPages(
   const { results: accounts } = await db
     .prepare(sql)
     .bind(...params)
-    .all<{ id: string; token_encrypted: string }>();
+    .all<AccountTokenRow>();
 
   const limit = pLimit(CONCURRENCY);
   const failures: { accountId: string; error: string }[] = [];
@@ -64,7 +64,7 @@ export async function syncWorkersPages(
     accounts.map((account) =>
       limit(async () => {
         try {
-          const token = await decryptSecret(account.token_encrypted, key);
+          const token = await resolveAccountToken(db, key, account);
           const client = makeClient(token);
           const cfAccounts = await client.listAccounts();
           const syncedAt = new Date().toISOString();
@@ -141,14 +141,14 @@ export async function syncWorkersPages(
           // Single atomic batch: any failure (including subrequest-limit exceeded)
           // rolls back entirely, leaving the old cache intact.
           await db.batch(stmts);
-          await updateAccountStatus(db, account.id, 'active');
+          await updateAccountStatus(db, account.owner_email, account.id, 'active');
           scripts += localScripts;
           projects += localProjects;
         } catch (e) {
           const message = e instanceof Error ? e.message : String(e);
           failures.push({ accountId: account.id, error: message });
           try {
-            await updateAccountStatus(db, account.id, 'error', message);
+            await updateAccountStatus(db, account.owner_email, account.id, 'error', message);
           } catch {
             // Failure is already recorded in failures[]; if recording the failure
             // itself throws, that shouldn't abort the entire batch.
@@ -477,7 +477,7 @@ export async function createPagesDnsRecord(
     const account = await getAccount(db, ownerEmail, zone.accountId);
     if (!account) return { created: false, zoneName, error: 'owning account not found' };
 
-    const client = makeClient(await decryptSecret(account.token_encrypted, key));
+    const client = makeClient(await resolveAccountToken(db, key, account));
     const name = opts.hostname.trim().toLowerCase().replace(/\.$/, '');
     await client.createDnsRecord(zone.zoneId, {
       type: 'CNAME',
@@ -501,5 +501,5 @@ export async function clientForAccount(
 ): Promise<CfClient> {
   const account = await getAccount(db, ownerEmail, accountId);
   if (!account) throw new NotFoundError('account not found');
-  return new CfClient(await decryptSecret(account.token_encrypted, key));
+  return cfClientForAccount(db, key, account);
 }

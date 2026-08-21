@@ -40,6 +40,15 @@ export interface CfAccount {
   name: string;
 }
 
+/** Email Sending Onboard 结果；id 对应 Cloudflare API 返回的 sending subdomain tag。 */
+export interface CfEmailSendingDomain {
+  id: string;
+  name: string;
+  enabled: boolean;
+  dkimSelector: string | null;
+  returnPathDomain: string | null;
+}
+
 /** 字段名与 SDK ScriptListResponse 保持一致（snake_case），raw 为 SDK 原始对象 */
 export interface CfWorkerScript {
   id: string;

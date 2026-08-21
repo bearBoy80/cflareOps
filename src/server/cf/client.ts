@@ -6,6 +6,7 @@ import type {
   CfD1QueryResult,
   CfDnsRecord,
   CfDnsRecordInput,
+  CfEmailSendingDomain,
   CfPagesDeployment,
   CfPagesDomain,
   CfPagesProject,
@@ -60,6 +61,14 @@ function extractMessages(e: InstanceType<typeof Cloudflare.APIError>): string[] 
   const maybe = e as unknown as { errors?: { message: string }[] };
   if (Array.isArray(maybe.errors) && maybe.errors.length > 0) return maybe.errors.map((x) => x.message);
   return [e.message];
+}
+
+function rejectTruncatedAnalytics(rows: unknown[], limit: number, dataset: string): void {
+  if (rows.length >= limit) {
+    throw new CfApiError(502, [
+      `${dataset} reached the Cloudflare Analytics row limit (${limit}); refusing to return truncated usage`,
+    ]);
+  }
 }
 
 function toDnsRecord(r: unknown): CfDnsRecord {
@@ -562,12 +571,15 @@ export class CfClient {
 
   /** 账号级 workers.dev 子域名；账号未注册时 CF 报错 → 返回 null（不抛） */
   async getWorkersSubdomain(cfAccountId: string): Promise<string | null> {
-    try {
-      const r = await this.sdk.workers.subdomains.get({ account_id: cfAccountId });
-      return r.subdomain ?? null;
-    } catch {
-      return null;
-    }
+    return this.wrap(async () => {
+      try {
+        const r = await this.sdk.workers.subdomains.get({ account_id: cfAccountId });
+        return r.subdomain ?? null;
+      } catch (e) {
+        if (e instanceof Cloudflare.APIError && e.status === 404) return null;
+        throw e;
+      }
+    });
   }
 
   /** 脚本是否挂在 workers.dev（生产/预览两个开关） */
@@ -861,7 +873,7 @@ export class CfClient {
       html?: string;
       text?: string;
     },
-  ): Promise<{ messageId: string }> {
+  ): Promise<{ messageId: string | null; delivered: string[]; queued: string[]; permanentBounces: string[] }> {
     return this.wrap(async () => {
       const r = await this.sdk.emailSending.send({
         account_id: cfAccountId,
@@ -873,7 +885,29 @@ export class CfClient {
         ...(params.html ? { html: params.html } : {}),
         ...(params.text ? { text: params.text } : {}),
       });
-      return { messageId: r.message_id };
+      return {
+        messageId: r.message_id ?? null,
+        delivered: r.delivered ?? [],
+        queued: r.queued ?? [],
+        permanentBounces: r.permanent_bounces ?? [],
+      };
+    });
+  }
+
+  /**
+   * Onboard Email Sending 域名。Cloudflare 会为其创建并托管 cf-bounce MX/SPF、
+   * DKIM 与 DMARC 记录；API 对根域和子域均统一称为 sending subdomain。
+   */
+  onboardEmailSendingDomain(zoneId: string, domain: string): Promise<CfEmailSendingDomain> {
+    return this.wrap(async () => {
+      const r = await this.sdk.emailSending.subdomains.create({ zone_id: zoneId, name: domain });
+      return {
+        id: r.tag,
+        name: r.name,
+        enabled: r.enabled,
+        dkimSelector: r.dkim_selector ?? null,
+        returnPathDomain: r.return_path_domain ?? null,
+      };
     });
   }
 
@@ -904,7 +938,9 @@ export class CfClient {
         }`,
         { account: cfAccountId, since: sinceISO, until: untilISO },
       );
-      return (data.viewer.accounts[0]?.workersInvocationsAdaptive ?? []).map((r) => ({
+      const rows = data.viewer.accounts[0]?.workersInvocationsAdaptive ?? [];
+      rejectTruncatedAnalytics(rows, 1000, 'workersInvocationsAdaptive');
+      return rows.map((r) => ({
         scriptName: r.dimensions.scriptName,
         requests: r.sum.requests,
         errors: r.sum.errors,
@@ -939,7 +975,9 @@ export class CfClient {
         }`,
         { account: cfAccountId, since: sinceISO, until: untilISO },
       );
-      return (data.viewer.accounts[0]?.pagesFunctionsInvocationsAdaptiveGroups ?? []).map((r) => ({
+      const rows = data.viewer.accounts[0]?.pagesFunctionsInvocationsAdaptiveGroups ?? [];
+      rejectTruncatedAnalytics(rows, 1000, 'pagesFunctionsInvocationsAdaptiveGroups');
+      return rows.map((r) => ({
         scriptName: r.dimensions.scriptName,
         requests: r.sum.requests,
       }));
@@ -973,7 +1011,9 @@ export class CfClient {
         }`,
         { account: cfAccountId, since: sinceISO, until: untilISO },
       );
-      return (data.viewer.accounts[0]?.workersInvocationsAdaptive ?? []).map((r) => ({
+      const rows = data.viewer.accounts[0]?.workersInvocationsAdaptive ?? [];
+      rejectTruncatedAnalytics(rows, 10000, 'workersInvocationsAdaptive daily');
+      return rows.map((r) => ({
         date: r.dimensions.date,
         scriptName: r.dimensions.scriptName,
         requests: r.sum.requests,
@@ -1009,7 +1049,9 @@ export class CfClient {
         }`,
         { account: cfAccountId, since: sinceISO, until: untilISO },
       );
-      return (data.viewer.accounts[0]?.pagesFunctionsInvocationsAdaptiveGroups ?? []).map((r) => ({
+      const rows = data.viewer.accounts[0]?.pagesFunctionsInvocationsAdaptiveGroups ?? [];
+      rejectTruncatedAnalytics(rows, 10000, 'pagesFunctionsInvocationsAdaptiveGroups daily');
+      return rows.map((r) => ({
         date: r.dimensions.date,
         scriptName: r.dimensions.scriptName,
         requests: r.sum.requests,
@@ -1044,7 +1086,9 @@ export class CfClient {
         }`,
         { account: cfAccountId, since: sinceISO, until: untilISO },
       );
-      return (data.viewer.accounts[0]?.workersInvocationsAdaptive ?? []).map((r) => ({
+      const rows = data.viewer.accounts[0]?.workersInvocationsAdaptive ?? [];
+      rejectTruncatedAnalytics(rows, 10000, 'workersInvocationsAdaptive hourly');
+      return rows.map((r) => ({
         bucket: r.dimensions.datetimeHour,
         scriptName: r.dimensions.scriptName,
         requests: r.sum.requests,
@@ -1080,7 +1124,9 @@ export class CfClient {
         }`,
         { account: cfAccountId, since: sinceISO, until: untilISO },
       );
-      return (data.viewer.accounts[0]?.pagesFunctionsInvocationsAdaptiveGroups ?? []).map((r) => ({
+      const rows = data.viewer.accounts[0]?.pagesFunctionsInvocationsAdaptiveGroups ?? [];
+      rejectTruncatedAnalytics(rows, 10000, 'pagesFunctionsInvocationsAdaptiveGroups hourly');
+      return rows.map((r) => ({
         bucket: r.dimensions.datetimeHour,
         scriptName: r.dimensions.scriptName,
         requests: r.sum.requests,
@@ -1242,17 +1288,74 @@ export class CfClient {
   ): Promise<{ contentType: string | null; text: string }> {
     return this.wrap(async () => {
       const res = await this.sdk.r2.buckets.objects.get(bucket, encodeR2ObjectKey(key), { account_id: cfAccountId });
-      // 注意：头缺失时 Number(null)=0（非 NaN），走不进这个分支——isFinite 过滤的是畸形非数字头；
-      // 缺头（chunked）场景由下方读完后的字节数二次校验兜底
-      const len = Number(res.headers.get('content-length'));
-      if (Number.isFinite(len) && len > maxBytes) {
-        void res.body?.cancel();
+      const lenHeader = res.headers.get('content-length');
+      const len = lenHeader === null ? null : Number(lenHeader);
+      if (len !== null && Number.isFinite(len) && len > maxBytes) {
+        await res.body?.cancel().catch(() => undefined);
         throw new R2ObjectTooLargeError();
       }
-      const buf = await res.arrayBuffer();
-      if (buf.byteLength > maxBytes) throw new R2ObjectTooLargeError();
-      return { contentType: res.headers.get('content-type'), text: new TextDecoder().decode(buf) };
+      if (!res.body) return { contentType: res.headers.get('content-type'), text: '' };
+
+      const reader = res.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > maxBytes) {
+          await reader.cancel().catch(() => undefined);
+          throw new R2ObjectTooLargeError();
+        }
+        chunks.push(value);
+      }
+      const bytes = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      return { contentType: res.headers.get('content-type'), text: new TextDecoder().decode(bytes) };
     });
+  }
+
+  /**
+   * OAuth access token 不能派生 R2 S3 凭证；对象直传场景经本应用流式代理到官方 REST 对象端点。
+   * Response body 原样流回浏览器，避免在 Worker 内存中缓冲对象。
+   */
+  getR2ObjectStream(cfAccountId: string, bucket: string, key: string): Promise<Response> {
+    return this.wrap(async () =>
+      this.sdk.r2.buckets.objects.get(bucket, encodeR2ObjectKey(key), { account_id: cfAccountId }),
+    );
+  }
+
+  /** OAuth 账号的对象上传流式代理；REST 端点当前最大支持 300 MB。 */
+  async uploadR2ObjectStream(
+    cfAccountId: string,
+    bucket: string,
+    key: string,
+    body: ReadableStream<Uint8Array>,
+    contentType: string | null,
+  ): Promise<void> {
+    const path = `/accounts/${encodeURIComponent(cfAccountId)}/r2/buckets/${encodeURIComponent(bucket)}/objects/${encodeR2ObjectKey(key)}`;
+    const res = await this.fetchImpl(`${API_BASE}${path}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${this.token}`,
+        'Content-Type': contentType || 'application/octet-stream',
+      },
+      body,
+    });
+    const envelope = (await res.json().catch(() => null)) as {
+      success?: boolean;
+      errors?: { message?: string }[];
+    } | null;
+    if (!res.ok || !envelope?.success) {
+      throw new CfApiError(
+        res.status,
+        envelope?.errors?.map((e) => e.message ?? 'R2 upload failed') ?? [`R2 upload failed (HTTP ${res.status})`],
+      );
+    }
   }
 
   /** 存储快照：近 24h 每桶体积/对象数（max 聚合近似当前值），同步时写入 r2_buckets 缓存列 */

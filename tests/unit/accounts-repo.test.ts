@@ -8,6 +8,7 @@ import {
   listAccounts,
   updateAccount,
   updateAccountStatus,
+  upsertOAuthAccount,
 } from '@/server/db/accounts';
 
 const ALICE = 'alice@ops.dev';
@@ -27,6 +28,7 @@ describe('accounts repository', () => {
       status: 'unchecked',
       lastCheck: null,
       lastError: null,
+      authType: 'token',
     });
     expect(JSON.stringify(accounts)).not.toContain('enc');
   });
@@ -48,10 +50,48 @@ describe('accounts repository', () => {
     expect((await listAccounts(db, BOB)).accounts).toHaveLength(1);
   });
 
+  it('re-authorizing the same OAuth connection updates scopes without replacing the account id', async () => {
+    const db = createTestDb();
+    const first = await upsertOAuthAccount(db, {
+      id: 'oauth-1',
+      ownerEmail: ALICE,
+      name: 'Cloudflare',
+      tokenEncrypted: 'access-1',
+      tokenHash: 'oauth-identity',
+      clientId: 'client-1',
+      refreshEncrypted: 'refresh-1',
+      expiresAt: '2026-08-20T01:00:00.000Z',
+      scope: 'zone.read',
+      sub: null,
+    });
+    const second = await upsertOAuthAccount(db, {
+      id: 'oauth-replacement',
+      ownerEmail: ALICE,
+      name: 'Cloudflare updated',
+      tokenEncrypted: 'access-2',
+      tokenHash: 'oauth-identity',
+      clientId: 'client-1',
+      refreshEncrypted: 'refresh-2',
+      expiresAt: '2026-08-20T02:00:00.000Z',
+      scope: 'zone.read email-sending.read email-sending.write',
+      sub: null,
+    });
+
+    expect(first).toEqual({ id: 'oauth-1', created: true });
+    expect(second).toEqual({ id: 'oauth-1', created: false });
+    expect((await listAccounts(db, ALICE)).total).toBe(1);
+    expect(await getAccount(db, ALICE, 'oauth-1')).toMatchObject({
+      name: 'Cloudflare updated',
+      token_encrypted: 'access-2',
+      oauth_refresh_encrypted: 'refresh-2',
+      oauth_scope: 'zone.read email-sending.read email-sending.write',
+    });
+  });
+
   it('updates status and health info', async () => {
     const db = createTestDb();
     await insertAccount(db, input);
-    await updateAccountStatus(db, 'a1', 'error', 'Invalid token');
+    await updateAccountStatus(db, ALICE, 'a1', 'error', 'Invalid token');
     const row = await getAccount(db, ALICE, 'a1');
     expect(row?.status).toBe('error');
     expect(row?.last_error).toBe('Invalid token');
@@ -115,7 +155,7 @@ describe('accounts repository', () => {
     it('renames without touching token or status', async () => {
       const db = createTestDb();
       await insertAccount(db, input);
-      await updateAccountStatus(db, 'a1', 'error', 'boom');
+      await updateAccountStatus(db, ALICE, 'a1', 'error', 'boom');
       await updateAccount(db, ALICE, 'a1', { name: 'Renamed' });
       const row = await getAccount(db, ALICE, 'a1');
       expect(row?.name).toBe('Renamed');
@@ -126,7 +166,7 @@ describe('accounts repository', () => {
     it('replaces token, resets status to active and clears last_error', async () => {
       const db = createTestDb();
       await insertAccount(db, input);
-      await updateAccountStatus(db, 'a1', 'error', 'boom');
+      await updateAccountStatus(db, ALICE, 'a1', 'error', 'boom');
       await updateAccount(db, ALICE, 'a1', { name: 'Acme', tokenEncrypted: 'enc2', tokenHash: 'h2' });
       const row = await getAccount(db, ALICE, 'a1');
       expect(row?.token_hash).toBe('h2');
@@ -163,7 +203,7 @@ describe('accounts repository', () => {
       const db = createTestDb();
       await insertAccount(db, input); // a1, ALICE
       await insertAccount(db, { id: 'a2', ownerEmail: ALICE, name: 'B', tokenEncrypted: 'enc2', tokenHash: 'h2' });
-      await updateAccountStatus(db, 'a1', 'error', 'bad token');
+      await updateAccountStatus(db, ALICE, 'a1', 'error', 'bad token');
       const stats = await countAccounts(db, ALICE);
       expect(stats.total).toBe(2);
       expect(stats.errors).toBe(1);
@@ -172,7 +212,7 @@ describe('accounts repository', () => {
     it('isolates counts between owners (BOB sees no ALICE data)', async () => {
       const db = createTestDb();
       await insertAccount(db, input); // a1, ALICE
-      await updateAccountStatus(db, 'a1', 'error', 'bad token');
+      await updateAccountStatus(db, ALICE, 'a1', 'error', 'bad token');
       const bobStats = await countAccounts(db, BOB);
       expect(bobStats).toEqual({ total: 0, errors: 0 });
     });

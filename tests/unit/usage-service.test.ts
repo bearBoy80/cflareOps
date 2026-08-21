@@ -95,6 +95,18 @@ describe('ensureUsageSnapshots', () => {
          VALUES ('2026-07-06', 'worker', 'a1', 'cf-1', 'w1', 99, 0, 'x')`,
       )
       .run();
+    await db
+      .prepare(
+        `INSERT INTO usage_daily (day, kind, account_id, cf_account_id, name, requests, errors, synced_at)
+         VALUES ('2026-07-06', 'pages', 'a1', 'cf-1', 'proj-a', 10, 0, 'x')`,
+      )
+      .run();
+    await db
+      .prepare(
+        `INSERT INTO usage_daily_covered (account_id, day, synced_at)
+         VALUES ('a1', '2026-07-06', 'x')`,
+      )
+      .run();
     const calls: { since: string; until: string }[] = [];
     await ensureUsageSnapshots(
       db,
@@ -111,27 +123,121 @@ describe('ensureUsageSnapshots', () => {
     expect(row?.requests).toBe(99); // 已有天未被覆盖
   });
 
-  it('maps pages rows via production_script_name and drops unmatched', async () => {
+  it('persists zero-traffic daily coverage so revisits read D1 without calling Cloudflare again', async () => {
     const db = createTestDb();
     await seed(db);
+    const calls: { since: string; until: string }[] = [];
+    const clientFor = async () => fakeUsageClient([], [], calls);
+
+    await ensureUsageSnapshots(db, ALICE, 3, clientFor, NOW);
+    expect(calls).toHaveLength(1);
+    const covered = await db
+      .prepare(`SELECT COUNT(*) AS c FROM usage_daily_covered WHERE account_id='a1'`)
+      .first<{ c: number }>();
+    expect(covered?.c).toBe(3);
+
+    await ensureUsageSnapshots(db, ALICE, 3, clientFor, NOW);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('does not let an existing worker row mask missing Pages usage for the same day', async () => {
+    const db = createTestDb();
+    await seed(db);
+    await db
+      .prepare(
+        `INSERT INTO usage_daily (day, kind, account_id, cf_account_id, name, requests, errors, synced_at)
+         VALUES ('2026-07-06', 'worker', 'a1', 'cf-1', 'old-worker', 99, 0, 'x')`,
+      )
+      .run();
+    const calls: { since: string; until: string }[] = [];
+
     await ensureUsageSnapshots(
       db,
       ALICE,
       1,
       async () =>
         fakeUsageClient(
-          [],
-          [
-            { date: '2026-07-06', scriptName: 'pages-worker--111-production', requests: 42 },
-            { date: '2026-07-06', scriptName: 'pages-worker--999-production', requests: 7 },
-          ],
+          [{ date: '2026-07-06', scriptName: 'worker-a', requests: 12, errors: 1 }],
+          [{ date: '2026-07-06', scriptName: 'pages-worker--111-production', requests: 42 }],
+          calls,
         ),
       NOW,
     );
+
+    expect(calls).toEqual([{ since: '2026-07-06T00:00:00Z', until: '2026-07-07T00:00:00Z' }]);
+    const { results } = await db
+      .prepare(`SELECT kind, name, requests FROM usage_daily WHERE day='2026-07-06' ORDER BY kind`)
+      .all<{ kind: string; name: string; requests: number }>();
+    expect(results).toEqual([
+      { kind: 'pages', name: 'proj-a', requests: 42 },
+      { kind: 'worker', name: 'worker-a', requests: 12 },
+    ]);
+  });
+
+  it('force refresh atomically replaces complete but stale daily buckets', async () => {
+    const db = createTestDb();
+    await seed(db);
+    for (const [kind, name] of [
+      ['worker', 'stale-worker'],
+      ['pages', 'stale-pages'],
+    ] as const) {
+      await db
+        .prepare(
+          `INSERT INTO usage_daily (day, kind, account_id, cf_account_id, name, requests, errors, synced_at)
+           VALUES ('2026-07-06', ?, 'a1', 'cf-1', ?, 99, 0, 'x')`,
+        )
+        .bind(kind, name)
+        .run();
+    }
+    await db
+      .prepare(
+        `INSERT INTO usage_daily_covered (account_id, day, synced_at)
+         VALUES ('a1', '2026-07-06', 'x')`,
+      )
+      .run();
+
+    await ensureUsageSnapshots(
+      db,
+      ALICE,
+      1,
+      async () =>
+        fakeUsageClient(
+          [{ date: '2026-07-06', scriptName: 'fresh-worker', requests: 7, errors: 0 }],
+          [{ date: '2026-07-06', scriptName: 'pages-worker--111-production', requests: 8 }],
+        ),
+      NOW,
+      { force: true },
+    );
+
+    const { results } = await db
+      .prepare(`SELECT kind, name, requests FROM usage_daily WHERE day='2026-07-06' ORDER BY kind`)
+      .all<{ kind: string; name: string; requests: number }>();
+    expect(results).toEqual([
+      { kind: 'pages', name: 'proj-a', requests: 8 },
+      { kind: 'worker', name: 'fresh-worker', requests: 7 },
+    ]);
+  });
+
+  it('maps Pages rows, drops unmatched rows, and still caches the successfully fetched day', async () => {
+    const db = createTestDb();
+    await seed(db);
+    const calls: { since: string; until: string }[] = [];
+    const clientFor = async () =>
+      fakeUsageClient(
+        [],
+        [
+          { date: '2026-07-06', scriptName: 'pages-worker--111-production', requests: 42 },
+          { date: '2026-07-06', scriptName: 'pages-worker--999-production', requests: 7 },
+        ],
+        calls,
+      );
+    await ensureUsageSnapshots(db, ALICE, 1, clientFor, NOW);
     const { results } = await db
       .prepare(`SELECT name, requests FROM usage_daily WHERE kind='pages'`)
       .all<{ name: string; requests: number }>();
     expect(results).toEqual([{ name: 'proj-a', requests: 42 }]);
+    await ensureUsageSnapshots(db, ALICE, 1, clientFor, NOW);
+    expect(calls).toHaveLength(1); // 单个已删除/未同步项目不能导致整个日期永久重复抓取
   });
 
   it('backfills a newly added account even when another account already has those days', async () => {
@@ -321,6 +427,10 @@ describe('ensureUsageHourlySnapshots', () => {
       .prepare(`SELECT name, requests FROM usage_hourly WHERE kind='pages'`)
       .all<{ name: string; requests: number }>();
     expect(results).toEqual([{ name: 'proj-a', requests: 42 }]);
+    const covered = await db
+      .prepare(`SELECT COUNT(*) AS c FROM usage_hourly_covered WHERE account_id='a1' AND hour='2026-07-07T11:00:00Z'`)
+      .first<{ c: number }>();
+    expect(covered?.c).toBe(1); // CF 查询已成功，未映射项目不能拖慢整个 24h 页面
   });
 
   it('marks fetched hours as covered so zero-traffic hours are not re-queried on revisit', async () => {

@@ -11,9 +11,11 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 
   const { db, key, userEmail } = await appContext(locals);
   const id = params.id!;
-  if (!(await getAccount(db, userEmail, id))) return jsonError('Account not found', 404, 'accountNotFound');
+  const existingAccount = await getAccount(db, userEmail, id);
+  if (!existingAccount) return jsonError('Account not found', 404, 'accountNotFound');
 
-  const token = body?.token?.trim();
+  // OAuth 账号凭证由授权托管,不接受手动换 Token(否则会与 oauth_* 列不一致);仅允许改名
+  const token = existingAccount.auth_type === 'oauth' ? undefined : body?.token?.trim();
   if (token) {
     try {
       const verify = await new CfClient(token).verifyToken();

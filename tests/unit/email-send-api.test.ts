@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { __setSendDeps, POST } from '@/pages/api/email/send';
 import { CfApiError } from '@/server/cf/client';
 import { encryptSecret, importEncryptionKey, sha256Hex } from '@/server/crypto';
+import { insertAccount } from '@/server/db/accounts';
 import { insertEmailDomain } from '@/server/db/emailDomains';
 import type { Db } from '@/server/db/types';
 
@@ -24,6 +25,19 @@ function ctx(db: unknown, body: unknown, userEmail = ALICE) {
 
 async function seedResendDomain(db: Db): Promise<void> {
   const key = await importEncryptionKey(HEX_KEY);
+  await insertAccount(db, {
+    id: 'a1',
+    ownerEmail: ALICE,
+    name: 'acct',
+    tokenEncrypted: 'enc',
+    tokenHash: 'hash-a1',
+  });
+  await db
+    .prepare(
+      `INSERT INTO zones (id, account_id, name, cf_account_id, raw_json, synced_at)
+       VALUES ('zone-example', 'a1', 'example.com', 'cf-1', '{}', '2026-08-20T00:00:00.000Z')`,
+    )
+    .run();
   await insertEmailDomain(db, {
     id: 'dom-1',
     ownerEmail: ALICE,
@@ -101,6 +115,23 @@ describe('POST /api/email/send', () => {
     await seedResendDomain(db);
     const res = await POST(ctx(db, validBody(), BOB));
     expect(res.status).toBe(404);
+    expect(await countLogs(db)).toBe(0);
+  });
+
+  it('404 and no provider call when the configured domain is outside authorized Zones', async () => {
+    const db = createTestDb();
+    await seedResendDomain(db);
+    await db.prepare('DELETE FROM zones').run();
+    let called = false;
+    __setSendDeps({
+      resend: async () => {
+        called = true;
+        return { messageId: 'must-not-send' };
+      },
+    });
+    const res = await POST(ctx(db, validBody()));
+    expect(res.status).toBe(404);
+    expect(called).toBe(false);
     expect(await countLogs(db)).toBe(0);
   });
 

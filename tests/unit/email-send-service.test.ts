@@ -23,6 +23,12 @@ async function setup(): Promise<{ db: Db; key: CryptoKey }> {
     tokenEncrypted: await encryptSecret('cf-token-1', key),
     tokenHash: await sha256Hex('cf-token-1'),
   });
+  await db
+    .prepare(
+      `INSERT INTO zones (id, account_id, name, cf_account_id, raw_json, synced_at)
+       VALUES ('zone-example', 'a1', 'example.com', 'cf-tag-1', '{}', '2026-08-20T00:00:00.000Z')`,
+    )
+    .run();
   await insertEmailDomain(db, {
     id: 'dom-resend',
     ownerEmail: ALICE,
@@ -114,9 +120,48 @@ describe('sendEmail service', () => {
     expect(result.status).toBe('sent');
   });
 
+  it('classifies Cloudflare permanent bounces instead of reporting every accepted API response as sent', async () => {
+    const { db, key } = await setup();
+    const result = await sendEmail(
+      { db, key, userEmail: ALICE },
+      'dom-cf',
+      msg({ from: 'ops@cf.example.com', to: ['ok@example.com', 'bad@example.com'] }),
+      {
+        makeCfClient: () => ({
+          async sendEmail() {
+            return {
+              messageId: 'mid-bounce',
+              delivered: ['ok@example.com'],
+              queued: [],
+              permanentBounces: ['bad@example.com'],
+            };
+          },
+        }),
+      },
+    );
+    expect(result).toMatchObject({ status: 'partial', permanentBounces: ['bad@example.com'] });
+    const log = await db.prepare('SELECT status, error FROM email_log WHERE id = ?').bind(result.logId).first<{
+      status: string;
+      error: string;
+    }>();
+    expect(log?.status).toBe('partial');
+    expect(log?.error).toContain('bad@example.com');
+  });
+
   it('rejects a cross-user domainId with NotFoundError and writes no log', async () => {
     const { db, key } = await setup();
     await expect(sendEmail({ db, key, userEmail: BOB }, 'dom-resend', msg())).rejects.toThrow(NotFoundError);
+    expect(await countLogs(db)).toBe(0);
+  });
+
+  it('rejects a configured domain that is no longer in the authorized Zones', async () => {
+    const { db, key } = await setup();
+    await db.prepare('DELETE FROM zones').run();
+    const resend = vi.fn(async () => ({ messageId: 'must-not-send' }));
+    await expect(sendEmail({ db, key, userEmail: ALICE }, 'dom-resend', msg(), { resend })).rejects.toThrow(
+      NotFoundError,
+    );
+    expect(resend).not.toHaveBeenCalled();
     expect(await countLogs(db)).toBe(0);
   });
 
@@ -178,5 +223,28 @@ describe('sendEmail service', () => {
       errorSpy.mockRestore();
     }
     expect(await countLogs(db)).toBe(0);
+  });
+
+  it('does not report provider failure when logging fails after the provider accepted the email', async () => {
+    const { db, key } = await setup();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const result = await sendEmail({ db: withBrokenLogWrites(db), key, userEmail: ALICE }, 'dom-resend', msg(), {
+        resend: async () => ({ messageId: 'already-sent' }),
+      });
+      expect(result).toMatchObject({ status: 'sent', messageId: 'already-sent', logged: false });
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it('replays a completed idempotent send without calling the provider twice', async () => {
+    const { db, key } = await setup();
+    const resend = vi.fn(async () => ({ messageId: 'once' }));
+    const first = await sendEmail({ db, key, userEmail: ALICE }, 'dom-resend', msg(), { resend }, 'request-1');
+    const replayed = await sendEmail({ db, key, userEmail: ALICE }, 'dom-resend', msg(), { resend }, 'request-1');
+    expect(replayed).toMatchObject({ logId: first.logId, status: 'sent', messageId: 'once' });
+    expect(resend).toHaveBeenCalledTimes(1);
   });
 });

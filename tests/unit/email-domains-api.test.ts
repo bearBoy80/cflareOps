@@ -1,8 +1,10 @@
 import { createTestDb } from '@tests/helpers/d1';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GET as getCfAccounts } from '@/pages/api/accounts/[id]/cf-accounts';
 import { DELETE, PUT } from '@/pages/api/email/domains/[id]';
 import { GET, POST } from '@/pages/api/email/domains/index';
+import { CfApiError, CfClient } from '@/server/cf/client';
+import { encryptSecret, importEncryptionKey } from '@/server/crypto';
 import { insertAccount } from '@/server/db/accounts';
 import { getEmailDomain } from '@/server/db/emailDomains';
 import type { Db } from '@/server/db/types';
@@ -27,10 +29,29 @@ function ctx(
 }
 
 async function createResendDomain(db: Db, domain = 'mail.example.com'): Promise<string> {
+  await seedAuthorizedZone(db, ALICE);
   const res = await POST(ctx(db, { method: 'POST', body: { domain, provider: 'resend', apiKey: 're_key_1' } }));
   expect(res.status).toBe(201);
   const body = (await res.json()) as { domain: { id: string } };
   return body.domain.id;
+}
+
+async function seedAuthorizedZone(db: Db, ownerEmail: string, accountId = `acct-${ownerEmail}`): Promise<void> {
+  await db
+    .prepare(
+      `INSERT OR IGNORE INTO cf_accounts
+       (id, owner_email, name, token_encrypted, token_hash, created_at, updated_at)
+       VALUES (?, ?, ?, 'enc', ?, '2026-08-20T00:00:00.000Z', '2026-08-20T00:00:00.000Z')`,
+    )
+    .bind(accountId, ownerEmail, accountId, `hash-${accountId}`)
+    .run();
+  await db
+    .prepare(
+      `INSERT OR IGNORE INTO zones (id, account_id, name, cf_account_id, raw_json, synced_at)
+       VALUES ('zone-example', ?, 'example.com', 'cf-1', '{}', '2026-08-20T00:00:00.000Z')`,
+    )
+    .bind(accountId)
+    .run();
 }
 
 describe('email domains API', () => {
@@ -51,6 +72,16 @@ describe('email domains API', () => {
       ctx(db, { method: 'POST', body: { domain: 'mail.example.com', provider: 'cloudflare' } }),
     );
     expect(noAcct.status).toBe(400);
+  });
+
+  it('POST rejects a domain outside the current Cloudflare authorization', async () => {
+    const db = createTestDb();
+    await seedAuthorizedZone(db, ALICE);
+    const res = await POST(
+      ctx(db, { method: 'POST', body: { domain: 'class6x.com', provider: 'resend', apiKey: 're_key_1' } }),
+    );
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe('domainNotAuthorized');
   });
 
   it('POST rejects a cloudflare accountId owned by another user with 404', async () => {
@@ -78,6 +109,70 @@ describe('email domains API', () => {
     expect(text).toContain('"apiKeyHint"');
   });
 
+  it('POST onboards a Cloudflare sending domain before storing it locally', async () => {
+    const db = createTestDb();
+    await seedAuthorizedZone(db, ALICE, 'a1');
+    const key = await importEncryptionKey(HEX_KEY);
+    await db
+      .prepare('UPDATE cf_accounts SET token_encrypted = ? WHERE id = ? AND owner_email = ?')
+      .bind(await encryptSecret('cf-token', key), 'a1', ALICE)
+      .run();
+    const onboard = vi.spyOn(CfClient.prototype, 'onboardEmailSendingDomain').mockResolvedValue({
+      id: 'sending-1',
+      name: 'mail.example.com',
+      enabled: true,
+      dkimSelector: 'cf-bounce',
+      returnPathDomain: 'cf-bounce.mail.example.com',
+    });
+
+    try {
+      const res = await POST(
+        ctx(db, {
+          method: 'POST',
+          body: { domain: 'mail.example.com', provider: 'cloudflare', accountId: 'a1', cfAccountId: 'cf-1' },
+        }),
+      );
+      expect(res.status).toBe(201);
+      expect(onboard).toHaveBeenCalledWith('zone-example', 'mail.example.com');
+      expect((await res.json()) as unknown).toMatchObject({
+        emailSending: { enabled: true, dkimSelector: 'cf-bounce' },
+      });
+      const list = (await (await GET(ctx(db))).json()) as { domains: { provider: string }[] };
+      expect(list.domains).toHaveLength(1);
+      expect(list.domains[0]?.provider).toBe('cloudflare');
+    } finally {
+      onboard.mockRestore();
+    }
+  });
+
+  it('POST does not store a Cloudflare domain when Email Sending Onboard is forbidden', async () => {
+    const db = createTestDb();
+    await seedAuthorizedZone(db, ALICE, 'a1');
+    const key = await importEncryptionKey(HEX_KEY);
+    await db
+      .prepare('UPDATE cf_accounts SET token_encrypted = ? WHERE id = ? AND owner_email = ?')
+      .bind(await encryptSecret('cf-token', key), 'a1', ALICE)
+      .run();
+    const onboard = vi
+      .spyOn(CfClient.prototype, 'onboardEmailSendingDomain')
+      .mockRejectedValue(new CfApiError(403, ['Authentication error']));
+
+    try {
+      const res = await POST(
+        ctx(db, {
+          method: 'POST',
+          body: { domain: 'mail.example.com', provider: 'cloudflare', accountId: 'a1', cfAccountId: 'cf-1' },
+        }),
+      );
+      expect(res.status).toBe(403);
+      expect((await res.json()) as unknown).toMatchObject({ code: 'emailOnboardForbidden' });
+      const list = (await (await GET(ctx(db))).json()) as { total: number };
+      expect(list.total).toBe(0);
+    } finally {
+      onboard.mockRestore();
+    }
+  });
+
   it('POST returns 409 duplicateDomain for the same user, 201 for another user', async () => {
     const db = createTestDb();
     await createResendDomain(db);
@@ -85,6 +180,7 @@ describe('email domains API', () => {
       ctx(db, { method: 'POST', body: { domain: 'MAIL.example.com', provider: 'resend', apiKey: 'k2' } }),
     );
     expect(dup.status).toBe(409);
+    await seedAuthorizedZone(db, BOB);
     const other = await POST(
       ctx(db, {
         method: 'POST',
@@ -107,6 +203,64 @@ describe('email domains API', () => {
     expect((await getEmailDomain(db, ALICE, id))!.api_key_hash).not.toBe(before.api_key_hash);
   });
 
+  it('PUT onboards before switching an existing Resend domain to Cloudflare', async () => {
+    const db = createTestDb();
+    const id = await createResendDomain(db);
+    const key = await importEncryptionKey(HEX_KEY);
+    await db
+      .prepare('UPDATE cf_accounts SET token_encrypted = ? WHERE id = ? AND owner_email = ?')
+      .bind(await encryptSecret('cf-token', key), `acct-${ALICE}`, ALICE)
+      .run();
+    const onboard = vi.spyOn(CfClient.prototype, 'onboardEmailSendingDomain').mockResolvedValue({
+      id: 'sending-1',
+      name: 'mail.example.com',
+      enabled: true,
+      dkimSelector: 'cf-bounce',
+      returnPathDomain: null,
+    });
+    try {
+      const res = await PUT(
+        ctx(db, {
+          method: 'PUT',
+          id,
+          body: { provider: 'cloudflare', accountId: `acct-${ALICE}`, cfAccountId: 'cf-1' },
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(onboard).toHaveBeenCalledWith('zone-example', 'mail.example.com');
+      expect((await getEmailDomain(db, ALICE, id))?.provider).toBe('cloudflare');
+    } finally {
+      onboard.mockRestore();
+    }
+  });
+
+  it('PUT keeps the previous provider when Cloudflare onboard is forbidden', async () => {
+    const db = createTestDb();
+    const id = await createResendDomain(db);
+    const key = await importEncryptionKey(HEX_KEY);
+    await db
+      .prepare('UPDATE cf_accounts SET token_encrypted = ? WHERE id = ? AND owner_email = ?')
+      .bind(await encryptSecret('cf-token', key), `acct-${ALICE}`, ALICE)
+      .run();
+    const onboard = vi
+      .spyOn(CfClient.prototype, 'onboardEmailSendingDomain')
+      .mockRejectedValue(new CfApiError(403, ['missing email-sending.write']));
+    try {
+      const res = await PUT(
+        ctx(db, {
+          method: 'PUT',
+          id,
+          body: { provider: 'cloudflare', accountId: `acct-${ALICE}`, cfAccountId: 'cf-1' },
+        }),
+      );
+      expect(res.status).toBe(403);
+      expect((await res.json()) as unknown).toMatchObject({ code: 'emailOnboardForbidden' });
+      expect((await getEmailDomain(db, ALICE, id))?.provider).toBe('resend');
+    } finally {
+      onboard.mockRestore();
+    }
+  });
+
   it('PUT/DELETE are owner-scoped (BOB gets 404 on ALICE domain)', async () => {
     const db = createTestDb();
     const id = await createResendDomain(db);
@@ -116,6 +270,18 @@ describe('email domains API', () => {
     expect(del.status).toBe(404);
     const delOk = await DELETE(ctx(db, { method: 'DELETE', id }));
     expect(delOk.status).toBe(204);
+  });
+
+  it('hides and blocks a configured domain after its Zone is no longer authorized', async () => {
+    const db = createTestDb();
+    const id = await createResendDomain(db);
+    await db.prepare('DELETE FROM zones').run();
+
+    const list = (await (await GET(ctx(db))).json()) as { domains: unknown[]; total: number };
+    expect(list).toMatchObject({ domains: [], total: 0 });
+    expect((await PUT(ctx(db, { method: 'PUT', id, body: { provider: 'resend' } }))).status).toBe(404);
+    expect((await DELETE(ctx(db, { method: 'DELETE', id }))).status).toBe(404);
+    expect(await getEmailDomain(db, ALICE, id)).not.toBeNull();
   });
 
   describe('GET /api/email/domains pagination', () => {

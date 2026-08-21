@@ -63,4 +63,24 @@ describe('emailLog repo', () => {
     expect((await listEmailLogs(db, BOB, { page: 1, pageSize: 10 })).total).toBe(1);
     expect(await getEmailLog(db, BOB, 'l1')).toBeNull();
   });
+
+  it('searches sender, all recipients, and subject without crossing owners', async () => {
+    const db = createTestDb();
+    await insertEmailLog(
+      db,
+      logInput('l1', ALICE, {
+        fromAddress: 'News@Example.com',
+        recipients: { to: ['to@example.com'], cc: ['team@example.com'], bcc: ['hidden@example.com'] },
+        subject: 'Monthly Report 100%',
+      }),
+    );
+    await insertEmailLog(db, logInput('l2', ALICE, { subject: 'Unrelated' }));
+    await insertEmailLog(db, logInput('b1', BOB, { subject: 'Monthly Report 100%' }));
+
+    expect((await listEmailLogs(db, ALICE, { page: 1, pageSize: 20, search: 'NEWS@' })).logs).toHaveLength(1);
+    expect((await listEmailLogs(db, ALICE, { page: 1, pageSize: 20, search: 'hidden@' })).logs).toHaveLength(1);
+    const subject = await listEmailLogs(db, ALICE, { page: 1, pageSize: 20, search: 'report 100%' });
+    expect(subject.total).toBe(1);
+    expect(subject.logs[0].id).toBe('l1');
+  });
 });

@@ -102,6 +102,34 @@ describe('bucket ownership guard', () => {
     );
     expect(res.status).toBe(400);
   });
+
+  it('returns a same-origin streaming proxy URL for OAuth accounts instead of deriving S3 credentials', async () => {
+    const db = createTestDb();
+    await seed(db);
+    await db
+      .prepare(
+        `UPDATE cf_accounts SET auth_type = 'oauth', oauth_client_id = 'client-1',
+         oauth_refresh_encrypted = 'unused', oauth_expires_at = '2099-01-01T00:00:00Z'
+         WHERE id = 'a1' AND owner_email = ?`,
+      )
+      .bind(ALICE)
+      .run();
+    const res = await presignPost(
+      ctx(
+        db,
+        'http://localhost/api/r2/a1/b1/presign',
+        { method: 'POST', body: JSON.stringify({ key: 'docs/a b.txt', op: 'get', download: true }) },
+        { accountId: 'a1', bucket: 'b1' },
+      ),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { url: string; proxy: boolean; expiresAt: string | null };
+    const proxy = new URL(body.url);
+    expect(body).toMatchObject({ proxy: true, expiresAt: null });
+    expect(proxy.origin).toBe('http://localhost');
+    expect(proxy.searchParams.get('key')).toBe('docs/a b.txt');
+    expect(proxy.searchParams.get('download')).toBe('1');
+  });
 });
 
 describe('GET /api/r2/:accountId/:bucket/content', () => {

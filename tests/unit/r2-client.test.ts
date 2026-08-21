@@ -219,6 +219,28 @@ describe('CfClient R2 objects', () => {
       R2ObjectTooLargeError,
     );
   });
+
+  it('uploadR2ObjectStream proxies a streaming PUT with bearer auth and an encoded key', async () => {
+    let seenUrl = '';
+    let seenInit: RequestInit | undefined;
+    const fetchImpl: typeof fetch = async (input, init) => {
+      seenUrl = String(input);
+      seenInit = init;
+      return jsonResponse(envelope({}));
+    };
+    const stream = new Blob(['hello']).stream();
+    await new CfClient('oauth-token', fetchImpl).uploadR2ObjectStream(
+      'cf-1',
+      'b1',
+      'docs/a b.txt',
+      stream,
+      'text/plain',
+    );
+    expect(seenUrl).toContain('/accounts/cf-1/r2/buckets/b1/objects/docs/a%20b.txt');
+    expect(seenInit?.method).toBe('PUT');
+    expect(new Headers(seenInit?.headers).get('Authorization')).toBe('Bearer oauth-token');
+    expect(seenInit?.body).toBe(stream);
+  });
 });
 
 describe('CfClient R2 GraphQL usage', () => {

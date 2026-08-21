@@ -3,6 +3,7 @@ import { CfApiError, CfClient } from '@/server/cf/client';
 import { appContext, jsonError } from '@/server/context';
 import { encryptSecret, sha256Hex } from '@/server/crypto';
 import { insertAccount, listAccounts } from '@/server/db/accounts';
+import { syncAllZones } from '@/server/zones';
 
 export const GET: APIRoute = async ({ locals, request }) => {
   const { db, userEmail } = await appContext(locals);
@@ -22,8 +23,10 @@ export const POST: APIRoute = async ({ request, locals }) => {
     return jsonError('name and token are required', 400, 'fieldsRequired');
   }
 
+  const token = body.token.trim();
+  const client = new CfClient(token);
   try {
-    const verify = await new CfClient(body.token).verifyToken();
+    const verify = await client.verifyToken();
     if (verify.status !== 'active') return jsonError(`Token is not active: ${verify.status}`, 400, 'tokenNotActive');
   } catch (e) {
     if (e instanceof CfApiError) return jsonError(`Token verification failed: ${e.message}`, 400, 'tokenVerifyFailed');
@@ -37,8 +40,8 @@ export const POST: APIRoute = async ({ request, locals }) => {
       id,
       ownerEmail: userEmail,
       name: body.name.trim(),
-      tokenEncrypted: await encryptSecret(body.token, key),
-      tokenHash: await sha256Hex(body.token),
+      tokenEncrypted: await encryptSecret(token, key),
+      tokenHash: await sha256Hex(token),
     });
   } catch (e) {
     if (e instanceof Error && e.message.includes('already exists')) {
@@ -46,5 +49,27 @@ export const POST: APIRoute = async ({ request, locals }) => {
     }
     throw e;
   }
-  return Response.json({ account: { id, name: body.name.trim(), status: 'unchecked' } }, { status: 201 });
+
+  // 邮件域名与其余 Zone 功能都以 zones 缓存为权限边界。新账号若不立即
+  // 同步，用户明明授权了域名却要等到手动点“同步”后才能看到。
+  // syncAllZones 会把上游失败记录到账户状态；账号本身仍保留，方便修正
+  // 权限后重试，不让附属同步失败把已经成功的账号添加变成重复添加。
+  let zoneSync: Awaited<ReturnType<typeof syncAllZones>> = { synced: 0, failures: [] };
+  try {
+    zoneSync = await syncAllZones(db, key, userEmail, () => client, id);
+  } catch (e) {
+    zoneSync.failures.push({ accountId: id, error: e instanceof Error ? e.message : String(e) });
+  }
+
+  return Response.json(
+    {
+      account: {
+        id,
+        name: body.name.trim(),
+        status: zoneSync.failures.length === 0 ? 'active' : 'error',
+      },
+      zoneSync,
+    },
+    { status: 201 },
+  );
 };

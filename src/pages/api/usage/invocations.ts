@@ -31,6 +31,7 @@ export const GET: APIRoute = async ({ locals, request }) => {
   const pageSize = Math.min(100, Math.max(1, Number(url.searchParams.get('pageSize') ?? '20') || 20));
   const search = (url.searchParams.get('search') ?? '').trim();
   const accountFilter = url.searchParams.get('accountId') ?? '';
+  const forceRefresh = url.searchParams.get('refresh') === '1';
   const now = new Date();
   const seriesRange = range as '24h' | '7d' | '30d';
 
@@ -40,6 +41,7 @@ export const GET: APIRoute = async ({ locals, request }) => {
       userEmail,
       (accountId) => clientForAccount(db, key, userEmail, accountId),
       now,
+      { force: forceRefresh },
     );
     const { rows, total, sinceHour, untilHour } = await queryUsageHourly(db, userEmail, {
       kind,
@@ -76,6 +78,7 @@ export const GET: APIRoute = async ({ locals, request }) => {
     days,
     (accountId) => clientForAccount(db, key, userEmail, accountId),
     now,
+    { force: forceRefresh },
   );
   const { rows, total, sinceDay, untilDay } = await queryUsageDaily(db, userEmail, {
     kind,

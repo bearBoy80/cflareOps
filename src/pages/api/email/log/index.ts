@@ -9,6 +9,7 @@ export const GET: APIRoute = async ({ locals, request }) => {
   const rawPageSize = parseInt(url.searchParams.get('pageSize') ?? '20', 10);
   const page = Number.isFinite(rawPage) && rawPage >= 1 ? rawPage : 1;
   const pageSize = Number.isFinite(rawPageSize) && rawPageSize >= 1 ? Math.min(100, rawPageSize) : 20;
-  const { logs, total } = await listEmailLogs(db, userEmail, { page, pageSize });
+  const search = (url.searchParams.get('search') ?? '').trim().slice(0, 200);
+  const { logs, total } = await listEmailLogs(db, userEmail, { page, pageSize, search });
   return Response.json({ logs, total, page, pageSize });
 };

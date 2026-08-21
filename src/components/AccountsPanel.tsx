@@ -1,4 +1,4 @@
-import { Activity, Check, KeyRound, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { Activity, Check, KeyRound, Pencil, Plus, Search, ShieldCheck, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { type Locale, type MessageKey, t } from '@/i18n';
 import { accountColor } from '@/lib/accountColor';
@@ -13,7 +13,20 @@ interface Account {
   status: string;
   lastCheck: string | null;
   lastError: string | null;
+  authType: string;
 }
+
+/** OAuth 回跳 ?oauth_error= 值 → 本地化文案 */
+const OAUTH_ERROR_KEYS: Record<string, MessageKey> = {
+  denied: 'accounts.errOauthDenied',
+  state: 'accounts.errOauthState',
+  config: 'accounts.errOauthConfig',
+  exchange: 'accounts.errOauthExchange',
+  refresh: 'accounts.errOauthRefresh',
+  accounts: 'accounts.errOauthAccounts',
+  save: 'accounts.errOauthSave',
+  duplicate: 'accounts.errOauthDuplicate',
+};
 
 const STATUS_DOT: Record<string, string> = {
   active: 'bg-success',
@@ -31,7 +44,7 @@ const ERROR_CODE_KEYS: Record<string, MessageKey> = {
   accountNotFound: 'accounts.errNotFound',
 };
 
-function AccountsPanelInner({ locale }: { locale: Locale }) {
+function AccountsPanelInner({ locale, oauthEnabled }: { locale: Locale; oauthEnabled: boolean }) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -60,6 +73,23 @@ function AccountsPanelInner({ locale }: { locale: Locale }) {
       mountedRef.current = false;
     };
   }, []);
+
+  // OAuth 回跳:?connected=1 成功 / ?oauth_error=<code> 失败 → Toast,并清理 query
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const connected = sp.get('connected');
+    const oauthError = sp.get('oauth_error');
+    if (!connected && !oauthError) return;
+    if (connected) showToast(t(locale, 'accounts.connected'), 'success');
+    else if (oauthError) {
+      const key = OAUTH_ERROR_KEYS[oauthError] ?? 'common.requestFailed';
+      showToast(t(locale, key), 'error');
+    }
+    sp.delete('connected');
+    sp.delete('oauth_error');
+    const qs = sp.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`);
+  }, [locale, showToast]);
 
   useEffect(() => {
     if (!editing) return;
@@ -248,6 +278,18 @@ function AccountsPanelInner({ locale }: { locale: Locale }) {
               <Plus size={14} strokeWidth={1.75} />
               {busy ? t(locale, 'accounts.verifying') : t(locale, 'accounts.submit')}
             </button>
+            {oauthEnabled && (
+              <button
+                className="btn btn-outline whitespace-nowrap"
+                type="button"
+                onClick={() => {
+                  window.location.href = '/api/accounts/oauth/start';
+                }}
+              >
+                <ShieldCheck size={14} strokeWidth={1.75} />
+                {t(locale, 'accounts.connectWithCloudflare')}
+              </button>
+            )}
           </div>
         </fieldset>
       </form>
@@ -306,7 +348,13 @@ function AccountsPanelInner({ locale }: { locale: Locale }) {
                       <td>
                         <span className="inline-flex items-center gap-2">
                           <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: accountColor(a.id) }} />
-                          {a.name}
+                          <span className="min-w-0 break-all">{a.name}</span>
+                          {a.authType === 'oauth' && (
+                            <span className="badge badge-ghost badge-sm shrink-0 gap-1 whitespace-nowrap">
+                              <ShieldCheck size={11} strokeWidth={2} />
+                              {t(locale, 'accounts.oauthBadge')}
+                            </span>
+                          )}
                         </span>
                       </td>
                       <td>
@@ -328,6 +376,18 @@ function AccountsPanelInner({ locale }: { locale: Locale }) {
                         )}
                       </td>
                       <td className="space-x-2 whitespace-nowrap">
+                        {a.authType === 'oauth' && oauthEnabled && (
+                          <button
+                            className="btn btn-xs whitespace-nowrap"
+                            title={t(locale, 'accounts.reconnect')}
+                            onClick={() => {
+                              window.location.href = `/api/accounts/oauth/start?reconnect=${encodeURIComponent(a.id)}`;
+                            }}
+                          >
+                            <ShieldCheck size={14} strokeWidth={1.75} />
+                            {t(locale, 'accounts.reconnect')}
+                          </button>
+                        )}
                         <button
                           className="btn btn-xs"
                           onClick={() => void checkAccount(a.id)}
@@ -394,13 +454,17 @@ function AccountsPanelInner({ locale }: { locale: Locale }) {
                 onChange={(e) => setEditName(e.target.value)}
                 required
               />
-              <input
-                className="input input-bordered input-sm w-full"
-                placeholder={t(locale, 'accounts.newTokenPlaceholder')}
-                type="password"
-                value={editToken}
-                onChange={(e) => setEditToken(e.target.value)}
-              />
+              {editing.authType === 'oauth' ? (
+                <p className="text-xs opacity-60">{t(locale, 'accounts.oauthEditHint')}</p>
+              ) : (
+                <input
+                  className="input input-bordered input-sm w-full"
+                  placeholder={t(locale, 'accounts.newTokenPlaceholder')}
+                  type="password"
+                  value={editToken}
+                  onChange={(e) => setEditToken(e.target.value)}
+                />
+              )}
               <div className="modal-action mt-2">
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing(null)}>
                   {t(locale, 'common.cancel')}
@@ -425,11 +489,11 @@ function AccountsPanelInner({ locale }: { locale: Locale }) {
   );
 }
 
-export default function AccountsPanel({ locale }: { locale: Locale }) {
+export default function AccountsPanel({ locale, oauthEnabled = false }: { locale: Locale; oauthEnabled?: boolean }) {
   return (
     <ToastProvider>
       <ConfirmDialogProvider>
-        <AccountsPanelInner locale={locale} />
+        <AccountsPanelInner locale={locale} oauthEnabled={oauthEnabled} />
       </ConfirmDialogProvider>
     </ToastProvider>
   );

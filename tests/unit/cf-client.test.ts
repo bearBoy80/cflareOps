@@ -1053,6 +1053,14 @@ describe('CfClient (official SDK adapter)', () => {
     expect(await new CfClient('tok', fetchImpl).getWorkersSubdomain('acc1')).toBeNull();
   });
 
+  it('getWorkersSubdomain does not hide authorization or upstream failures', async () => {
+    const fetchImpl: typeof fetch = async () =>
+      jsonResponse({ success: false, errors: [{ code: 10000, message: 'Authentication error' }], result: null }, 403);
+    await expect(new CfClient('tok', fetchImpl).getWorkersSubdomain('acc1')).rejects.toMatchObject({
+      status: 403,
+    });
+  });
+
   it('getWorkerScriptSubdomain reads enabled/previews_enabled', async () => {
     let seenUrl = '';
     const fetchImpl: typeof fetch = async (input) => {
@@ -1407,6 +1415,42 @@ describe('CfClient (official SDK adapter)', () => {
     expect(seenBody.text).toBe('hi');
     expect(seenBody.from).toEqual({ address: 'no-reply@mail.example.com', name: 'Ops' });
     expect('cc' in seenBody).toBe(false);
+  });
+
+  it('onboardEmailSendingDomain creates a sending subdomain through the official SDK', async () => {
+    let seenUrl = '';
+    let seenMethod = '';
+    let seenBody: Record<string, unknown> = {};
+    const fetchImpl: typeof fetch = async (input, init) => {
+      seenUrl = String(input);
+      seenMethod = init?.method ?? 'GET';
+      seenBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return jsonResponse({
+        success: true,
+        errors: [],
+        messages: [],
+        result: {
+          enabled: true,
+          name: 'mail.example.com',
+          tag: 'sending-1',
+          dkim_selector: 'cf-bounce',
+          return_path_domain: 'cf-bounce.mail.example.com',
+        },
+      });
+    };
+
+    const result = await new CfClient('tok', fetchImpl).onboardEmailSendingDomain('zone-1', 'mail.example.com');
+
+    expect(seenMethod).toBe('POST');
+    expect(seenUrl).toContain('/zones/zone-1/email/sending/subdomains');
+    expect(seenBody).toEqual({ name: 'mail.example.com' });
+    expect(result).toEqual({
+      id: 'sending-1',
+      name: 'mail.example.com',
+      enabled: true,
+      dkimSelector: 'cf-bounce',
+      returnPathDomain: 'cf-bounce.mail.example.com',
+    });
   });
 
   it('sendEmail maps a 403 (missing Email Sending scope) to CfApiError', async () => {

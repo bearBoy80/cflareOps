@@ -1,6 +1,7 @@
 import { CfApiError } from './cf/client';
 import { importEncryptionKey } from './crypto';
 import type { Db } from './db/types';
+import { runtimeEnv } from './env';
 
 /** 资源在当前用户可见范围内不存在（跨用户访问或缓存缺失），API 层统一映射为 404。 */
 export class NotFoundError extends Error {
@@ -38,7 +39,8 @@ export function apiErrorResponse(e: unknown): Response {
   if (isMissingTableError(e)) {
     return jsonError('Database tables missing — run D1 migrations', 500, 'config.dbNotMigrated');
   }
-  return jsonError(e instanceof Error ? e.message : 'Internal Server Error', 500, 'internal');
+  // 未分类异常的原始 message 可能含 SQL、路径、上游响应或配置细节；只写服务端日志，客户端统一返回安全文案。
+  return jsonError('Internal Server Error', 500, 'internal');
 }
 
 /** DNS 等透传 Cloudflare API 的路由共用的错误映射：CF 4xx 原样、5xx 归 502、NotFound 归 404。 */
@@ -49,7 +51,7 @@ export function handleCfError(e: unknown): Response {
 }
 
 export async function appContext(locals: App.Locals): Promise<{ db: Db; key: CryptoKey; userEmail: string }> {
-  const env = locals.runtime.env;
+  const env = runtimeEnv(locals);
   // 部署后常见的“配置没配全”场景：给出可定位的 code，而不是让下游抛不透明 500。
   if (!env.DB) {
     throw new ConfigError('D1 database binding "DB" is missing', 'dbBindingMissing');

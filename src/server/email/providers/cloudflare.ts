@@ -1,9 +1,23 @@
-import type { CfClient } from '@/server/cf/client';
 import type { ProviderSendOk, ProviderSendParams } from '@/server/email/types';
+
+export interface CloudflareEmailClient {
+  sendEmail(
+    cfAccountId: string,
+    params: {
+      from: string | { address: string; name: string };
+      to: string[];
+      cc?: string[];
+      bcc?: string[];
+      subject: string;
+      html?: string;
+      text?: string;
+    },
+  ): Promise<ProviderSendOk>;
+}
 
 /** 不直接 fetch：Cloudflare API 只经 CfClient（sendEmail 方法），维持项目边界约定 */
 export async function sendViaCloudflare(
-  client: Pick<CfClient, 'sendEmail'>,
+  client: CloudflareEmailClient,
   cfAccountId: string,
   params: ProviderSendParams,
 ): Promise<ProviderSendOk> {
@@ -16,5 +30,10 @@ export async function sendViaCloudflare(
     html: params.html,
     text: params.text,
   });
-  return { messageId: r.messageId ?? null };
+  return {
+    messageId: r.messageId ?? null,
+    delivered: r.delivered,
+    queued: r.queued,
+    permanentBounces: r.permanentBounces,
+  };
 }

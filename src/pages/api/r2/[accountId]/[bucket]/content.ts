@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
-import { CfClient, R2ObjectTooLargeError } from '@/server/cf/client';
+import { cfClientForAccount } from '@/server/cf/account';
+import { R2ObjectTooLargeError } from '@/server/cf/client';
 import { appContext, handleCfError, jsonError, NotFoundError } from '@/server/context';
-import { decryptSecret } from '@/server/crypto';
 import { getAccount } from '@/server/db/accounts';
 import { getCachedR2Bucket } from '@/server/r2';
 
@@ -19,8 +19,7 @@ export const GET: APIRoute = async ({ params, locals, request }) => {
   try {
     const account = await getAccount(db, userEmail, params.accountId!);
     if (!account) throw new NotFoundError('account not found');
-    const token = await decryptSecret(account.token_encrypted, key);
-    const client = new CfClient(token);
+    const client = await cfClientForAccount(db, key, account);
     const content = await client.getR2ObjectContent(bucket.cfAccountId, bucket.name, objectKey, MAX_PREVIEW_BYTES);
     return Response.json(content);
   } catch (e) {

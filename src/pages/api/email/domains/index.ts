@@ -1,8 +1,10 @@
 import type { APIRoute } from 'astro';
-import { appContext, jsonError } from '@/server/context';
+import { resolveAccountToken } from '@/server/cf/account';
+import { CfApiError, CfClient } from '@/server/cf/client';
+import { appContext, handleCfError, jsonError } from '@/server/context';
 import { encryptSecret, sha256Hex } from '@/server/crypto';
 import { getAccount } from '@/server/db/accounts';
-import { insertEmailDomain, listEmailDomains, toPublic } from '@/server/db/emailDomains';
+import { findAuthorizedEmailZone, insertEmailDomain, listUsableEmailDomains, toPublic } from '@/server/db/emailDomains';
 
 export const DOMAIN_RE = /^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i;
 
@@ -32,7 +34,7 @@ export const GET: APIRoute = async ({ locals, request }) => {
   const rawPageSize = parseInt(url.searchParams.get('pageSize') ?? '20', 10);
   const page = Number.isFinite(rawPage) && rawPage >= 1 ? rawPage : 1;
   const pageSize = Number.isFinite(rawPageSize) && rawPageSize >= 1 ? Math.min(100, rawPageSize) : 20;
-  const { domains, total } = await listEmailDomains(db, userEmail, { page, pageSize });
+  const { domains, total } = await listUsableEmailDomains(db, userEmail, { page, pageSize });
   return Response.json({ domains: domains.map(toPublic), total, page, pageSize });
 };
 
@@ -47,9 +49,37 @@ export const POST: APIRoute = async ({ request, locals }) => {
   }
 
   const { db, key, userEmail } = await appContext(locals);
-  if (body.provider === 'cloudflare' && !(await getAccount(db, userEmail, body.accountId!))) {
+  const account = body.provider === 'cloudflare' ? await getAccount(db, userEmail, body.accountId!) : null;
+  if (body.provider === 'cloudflare' && !account) {
     return jsonError('Account not found', 404, 'accountNotFound');
   }
+  const binding =
+    body.provider === 'cloudflare' ? { accountId: body.accountId!, cfAccountId: body.cfAccountId! } : undefined;
+  const zone = await findAuthorizedEmailZone(db, userEmail, domain, binding);
+  if (!zone) {
+    return jsonError('Domain is not visible to the selected Cloudflare authorization', 403, 'domainNotAuthorized');
+  }
+
+  // Cloudflare provider 的“添加域名”同时完成 Email Sending Onboard。官方 API 会创建并
+  // 托管 cf-bounce MX/SPF、DKIM 与 DMARC；上游失败时不写本地配置，避免出现不可用域名。
+  let emailSending: { enabled: boolean; dkimSelector: string | null; returnPathDomain: string | null } | undefined;
+  if (body.provider === 'cloudflare') {
+    try {
+      const token = await resolveAccountToken(db, key, account!);
+      const onboarded = await new CfClient(token).onboardEmailSendingDomain(zone.zoneId, domain);
+      emailSending = {
+        enabled: onboarded.enabled,
+        dkimSelector: onboarded.dkimSelector,
+        returnPathDomain: onboarded.returnPathDomain,
+      };
+    } catch (e) {
+      if (e instanceof CfApiError && (e.status === 401 || e.status === 403)) {
+        return jsonError(e.message, e.status, 'emailOnboardForbidden');
+      }
+      return handleCfError(e);
+    }
+  }
+
   const apiKey = body.apiKey?.trim();
   const id = crypto.randomUUID();
   try {
@@ -69,5 +99,5 @@ export const POST: APIRoute = async ({ request, locals }) => {
     }
     throw e;
   }
-  return Response.json({ domain: { id, domain, provider: body.provider } }, { status: 201 });
+  return Response.json({ domain: { id, domain, provider: body.provider }, emailSending }, { status: 201 });
 };

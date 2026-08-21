@@ -64,4 +64,14 @@ describe('email log API', () => {
     const body = (await res.json()) as { total: number };
     expect(body.total).toBe(1);
   });
+
+  it('passes search through to the paginated list query', async () => {
+    const db = createTestDb();
+    await seed(db, 'matching');
+    await seed(db, 'other');
+    const res = await getList(ctx(db, { url: 'http://localhost/api/email/log?search=s-matching' }));
+    const body = (await res.json()) as { logs: Array<{ id: string }>; total: number };
+    expect(body.total).toBe(1);
+    expect(body.logs.map((log) => log.id)).toEqual(['matching']);
+  });
 });

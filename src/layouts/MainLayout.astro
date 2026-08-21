@@ -4,6 +4,7 @@ import { BarChart3, Check, ChevronDown, Database, DatabaseZap, Globe, Languages,
 import { LOCALES, t, type Locale } from '@/i18n';
 import { localizePath } from '@/i18n/routing';
 import { shouldBypassAuth } from '@/server/auth';
+import { runtimeEnv } from '@/server/env';
 import ThemeToggle from '@/components/ThemeToggle';
 interface Props { title: string; locale: Locale }
 const { title, locale } = Astro.props;
@@ -23,7 +24,7 @@ const LOCALE_LABELS: Record<Locale, string> = { zh: '中文', en: 'English' };
 const userEmail = Astro.locals.userEmail;
 // Cloudflare Access 的登出走边缘端点 /cdn-cgi/access/logout（清除 CF_Authorization cookie）。
 // DEV_MODE 旁路时没有真实会话，登出无意义 —— 菜单里改为禁用提示。
-const devBypass = shouldBypassAuth(Astro.locals.runtime.env);
+const devBypass = shouldBypassAuth(runtimeEnv(Astro.locals));
 const logoutHref = '/cdn-cgi/access/logout';
 const sidebarHidden = Astro.cookies.get('sidebar')?.value === 'hidden';
 function isActive(href: string): boolean {

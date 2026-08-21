@@ -1,7 +1,7 @@
 import pLimit from 'p-limit';
+import { ACCOUNT_TOKEN_COLUMNS, type AccountTokenRow, cfClientForAccount, resolveAccountToken } from './cf/account';
 import { CfClient } from './cf/client';
 import { NotFoundError } from './context';
-import { decryptSecret } from './crypto';
 import { getAccount, updateAccountStatus } from './db/accounts';
 import type { Db, DbStatement } from './db/types';
 
@@ -32,7 +32,7 @@ export async function syncAllZones(
   accountId?: string,
 ): Promise<{ synced: number; failures: { accountId: string; error: string }[] }> {
   const params: unknown[] = [ownerEmail];
-  let sql = 'SELECT id, token_encrypted FROM cf_accounts WHERE owner_email = ?';
+  let sql = `SELECT ${ACCOUNT_TOKEN_COLUMNS} FROM cf_accounts WHERE owner_email = ?`;
   if (accountId) {
     sql += ' AND id = ?';
     params.push(accountId);
@@ -40,7 +40,7 @@ export async function syncAllZones(
   const { results: accounts } = await db
     .prepare(sql)
     .bind(...params)
-    .all<{ id: string; token_encrypted: string }>();
+    .all<AccountTokenRow>();
 
   const limit = pLimit(CONCURRENCY);
   const failures: { accountId: string; error: string }[] = [];
@@ -50,7 +50,7 @@ export async function syncAllZones(
     accounts.map((account) =>
       limit(async () => {
         try {
-          const token = await decryptSecret(account.token_encrypted, key);
+          const token = await resolveAccountToken(db, key, account);
           const zones = await makeClient(token).listZones();
           const syncedAt = new Date().toISOString();
 
@@ -95,13 +95,13 @@ export async function syncAllZones(
 
           // Single atomic batch: DELETE + all INSERTs commit together.
           await db.batch(stmts);
-          await updateAccountStatus(db, account.id, 'active');
+          await updateAccountStatus(db, account.owner_email, account.id, 'active');
           synced += zones.length;
         } catch (e) {
           const message = e instanceof Error ? e.message : String(e);
           failures.push({ accountId: account.id, error: message });
           try {
-            await updateAccountStatus(db, account.id, 'error', message);
+            await updateAccountStatus(db, account.owner_email, account.id, 'error', message);
           } catch {
             // Failure is already recorded in failures[]; if recording the failure
             // itself throws, that shouldn't abort the entire batch.
@@ -251,5 +251,5 @@ export async function clientForZone(db: Db, key: CryptoKey, ownerEmail: string, 
   if (!zone) throw new NotFoundError('zone not found in cache; run sync first');
   const account = await getAccount(db, ownerEmail, zone.account_id);
   if (!account) throw new NotFoundError('owning account not found');
-  return new CfClient(await decryptSecret(account.token_encrypted, key));
+  return cfClientForAccount(db, key, account);
 }

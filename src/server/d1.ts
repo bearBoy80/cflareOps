@@ -1,6 +1,6 @@
 import pLimit from 'p-limit';
+import { ACCOUNT_TOKEN_COLUMNS, type AccountTokenRow, resolveAccountToken } from './cf/account';
 import { CfClient } from './cf/client';
-import { decryptSecret } from './crypto';
 import { updateAccountStatus } from './db/accounts';
 import type { Db, DbStatement } from './db/types';
 
@@ -32,7 +32,7 @@ export async function syncD1Databases(
   accountId?: string,
 ): Promise<{ databases: number; failures: { accountId: string; error: string }[] }> {
   const params: unknown[] = [ownerEmail];
-  let sql = 'SELECT id, token_encrypted FROM cf_accounts WHERE owner_email = ?';
+  let sql = `SELECT ${ACCOUNT_TOKEN_COLUMNS} FROM cf_accounts WHERE owner_email = ?`;
   if (accountId) {
     sql += ' AND id = ?';
     params.push(accountId);
@@ -40,7 +40,7 @@ export async function syncD1Databases(
   const { results: accounts } = await db
     .prepare(sql)
     .bind(...params)
-    .all<{ id: string; token_encrypted: string }>();
+    .all<AccountTokenRow>();
 
   const limit = pLimit(CONCURRENCY);
   const failures: { accountId: string; error: string }[] = [];
@@ -50,7 +50,7 @@ export async function syncD1Databases(
     accounts.map((account) =>
       limit(async () => {
         try {
-          const token = await decryptSecret(account.token_encrypted, key);
+          const token = await resolveAccountToken(db, key, account);
           const client = makeClient(token);
           const cfAccounts = await client.listAccounts();
           const syncedAt = new Date().toISOString();
@@ -90,13 +90,13 @@ export async function syncD1Databases(
           }
 
           await db.batch(stmts);
-          await updateAccountStatus(db, account.id, 'active');
+          await updateAccountStatus(db, account.owner_email, account.id, 'active');
           databases += localDbs;
         } catch (e) {
           const message = e instanceof Error ? e.message : String(e);
           failures.push({ accountId: account.id, error: message });
           try {
-            await updateAccountStatus(db, account.id, 'error', message);
+            await updateAccountStatus(db, account.owner_email, account.id, 'error', message);
           } catch {
             // 失败已记录在 failures[];状态落库失败不应中断整个同步
           }
