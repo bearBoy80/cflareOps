@@ -147,6 +147,32 @@ describe('CfClient R2 objects', () => {
     await expect(new CfClient('tok', fetchImpl).deleteR2Object('cf-1', 'b1', '')).rejects.toBeInstanceOf(CfApiError);
   });
 
+  it.each([
+    'a/../../cors',
+    '../other/x',
+    'a/./b',
+    '..',
+    '.',
+  ])('rejects dot-segment key %s before touching the API (URL would collapse onto another path)', async (key) => {
+    const fetchImpl: typeof fetch = async () => {
+      throw new Error('must not fetch');
+    };
+    const client = new CfClient('tok', fetchImpl);
+    await expect(client.deleteR2Object('cf-1', 'b1', key)).rejects.toMatchObject({ status: 400 });
+    await expect(client.getR2ObjectContent('cf-1', 'b1', key, 1024)).rejects.toBeInstanceOf(CfApiError);
+    await expect(client.getR2ObjectStream('cf-1', 'b1', key)).rejects.toBeInstanceOf(CfApiError);
+  });
+
+  it('still accepts keys that merely contain dots inside a segment', async () => {
+    let seenUrl = '';
+    const fetchImpl: typeof fetch = async (input) => {
+      seenUrl = String(input);
+      return jsonResponse(envelope({ key: 'x' }));
+    };
+    await new CfClient('tok', fetchImpl).deleteR2Object('cf-1', 'b1', 'v1.2/..hidden/file..txt');
+    expect(seenUrl).toContain('/objects/v1.2/..hidden/file..txt');
+  });
+
   it('deleteR2Prefix lists without delimiter and deletes every nested key until empty', async () => {
     const deletes: string[] = [];
     let listCount = 0;

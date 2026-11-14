@@ -1,5 +1,5 @@
 import { AwsClient } from 'aws4fetch';
-import type { CfClient } from './cf/client';
+import { type CfClient, encodeR2ObjectKey } from './cf/client';
 import { sha256Hex } from './crypto';
 
 /**
@@ -38,7 +38,8 @@ export async function presignR2ObjectUrl(
     service: 's3',
     region: 'auto',
   });
-  const encodedKey = opts.key.split('/').map(encodeURIComponent).join('/');
+  // 与 REST 路径同一编码规则；点段 key 会被 URL 折叠出目标桶，encodeR2ObjectKey 直接拒绝
+  const encodedKey = encodeR2ObjectKey(opts.key);
   const url = new URL(`https://${opts.cfAccountId}.r2.cloudflarestorage.com/${opts.bucket}/${encodedKey}`);
   url.searchParams.set('X-Amz-Expires', String(opts.expiresSeconds ?? 900));
   if (opts.downloadFilename) {

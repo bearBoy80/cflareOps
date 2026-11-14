@@ -81,4 +81,16 @@ describe('presignR2ObjectUrl', () => {
     );
     expect(url.searchParams.get('response-content-disposition')).toBe("attachment; filename*=UTF-8''report.csv");
   });
+
+  it.each([
+    '../b2/secret',
+    'a/../../b2/secret',
+    './k',
+  ])('refuses to sign dot-segment key %s (would escape the bucket)', async (key) => {
+    await expect(
+      presignR2ObjectUrl(CREDS, { cfAccountId: 'cf-1', bucket: 'b1', key, method: 'GET' }),
+    ).rejects.toMatchObject({
+      status: 400,
+    });
+  });
 });

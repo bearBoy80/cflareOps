@@ -1,8 +1,8 @@
 import { createTestDb } from '@tests/helpers/d1';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GET as contentGet } from '@/pages/api/r2/[accountId]/[bucket]/content';
 import { DELETE as objectsDelete, GET as objectsGet } from '@/pages/api/r2/[accountId]/[bucket]/objects';
-import { POST as presignPost } from '@/pages/api/r2/[accountId]/[bucket]/presign';
+import { GET as presignGet, POST as presignPost } from '@/pages/api/r2/[accountId]/[bucket]/presign';
 import { GET as bucketsGet, POST as bucketsPost } from '@/pages/api/r2/buckets';
 import { encryptSecret, importEncryptionKey } from '@/server/crypto';
 import { insertAccount } from '@/server/db/accounts';
@@ -149,5 +149,80 @@ describe('GET /api/r2/:accountId/:bucket/content', () => {
       ctx(db, 'http://localhost/api/r2/a1/nope/content?key=a.txt', undefined, { accountId: 'a1', bucket: 'nope' }),
     );
     expect(res.status).toBe(404);
+  });
+});
+
+describe('GET /api/r2/:accountId/:bucket/presign (OAuth streaming proxy)', () => {
+  async function seedOAuth() {
+    const db = createTestDb();
+    await seed(db);
+    await db
+      .prepare(
+        `UPDATE cf_accounts SET auth_type = 'oauth', oauth_client_id = 'client-1',
+         oauth_refresh_encrypted = 'unused', oauth_expires_at = '2099-01-01T00:00:00Z'
+         WHERE id = 'a1' AND owner_email = ?`,
+      )
+      .bind(ALICE)
+      .run();
+    return db;
+  }
+
+  async function proxyGet(objectContentType: string, query = '') {
+    const db = await seedOAuth();
+    vi.stubGlobal(
+      'fetch',
+      async () =>
+        new Response('<script>alert(1)</script>', {
+          headers: { 'content-type': objectContentType },
+        }),
+    );
+    try {
+      return await presignGet(
+        ctx(db, `http://localhost/api/r2/a1/b1/presign?key=x/obj${query}`, undefined, {
+          accountId: 'a1',
+          bucket: 'b1',
+        }),
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }
+
+  it.each([
+    'text/html',
+    'image/svg+xml',
+    'application/xhtml+xml',
+    'text/plain',
+    'application/octet-stream',
+    '',
+  ])('forces attachment + sandbox for script-capable or unknown type %j', async (type) => {
+    const res = await proxyGet(type);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-disposition')).toMatch(/^attachment;/);
+    expect(res.headers.get('content-security-policy')).toBe('sandbox');
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+  });
+
+  it.each([
+    'image/png',
+    'video/mp4',
+    'audio/mpeg; charset=binary',
+  ])('keeps inline media %j previewable but sandboxed', async (type) => {
+    const res = await proxyGet(type);
+    expect(res.headers.get('content-disposition')).toBeNull();
+    expect(res.headers.get('content-security-policy')).toBe('sandbox');
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+  });
+
+  it('keeps PDFs inline without sandbox CSP so the browser viewer can render', async () => {
+    const res = await proxyGet('application/pdf');
+    expect(res.headers.get('content-disposition')).toBeNull();
+    expect(res.headers.get('content-security-policy')).toBeNull();
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+  });
+
+  it('still honors an explicit download request for inline-safe media', async () => {
+    const res = await proxyGet('image/png', '&download=1');
+    expect(res.headers.get('content-disposition')).toMatch(/^attachment;/);
   });
 });
