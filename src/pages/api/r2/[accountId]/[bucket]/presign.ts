@@ -23,6 +23,19 @@ function downloadDisposition(objectKey: string): string {
   return `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
+/**
+ * 代理响应与本应用同源：对象的 Content-Type 由上传方任意设置，若原样内联渲染
+ * text/html、image/svg+xml 等可执行脚本的类型，就是对整个控制台的存储型 XSS。
+ * 只有不会执行脚本的媒体类型允许内联（预览 <img>/<video>/<audio>/PDF iframe 用），
+ * 其余一律强制附件下载。<img> 忽略 Content-Disposition，SVG 缩略预览不受影响。
+ */
+function inlinePolicy(contentType: string | null): 'pdf' | 'media' | 'attachment' {
+  const essence = (contentType ?? '').split(';')[0].trim().toLowerCase();
+  if (essence === 'application/pdf') return 'pdf';
+  if (essence.includes('svg') || essence.includes('xml')) return 'attachment';
+  return /^(image|video|audio)\/[\w.+-]+$/.test(essence) ? 'media' : 'attachment';
+}
+
 export const POST: APIRoute = async ({ params, locals, request }) => {
   const { db, key, userEmail } = await appContext(locals);
   const body = (await request.json().catch(() => null)) as {
@@ -84,9 +97,14 @@ export const GET: APIRoute = async ({ params, locals, request }) => {
       const value = upstream.headers.get(name);
       if (value) headers.set(name, value);
     }
-    if (url.searchParams.get('download') === '1') {
+    const policy = inlinePolicy(upstream.headers.get('content-type'));
+    if (url.searchParams.get('download') === '1' || policy === 'attachment') {
       headers.set('content-disposition', downloadDisposition(objectKey));
     }
+    // nosniff：禁止浏览器把声明为媒体的内容嗅探成 HTML。sandbox CSP 作纵深防御：即便被顶层
+    // 打开也落在不透明源、无脚本；PDF 例外——Chromium 的 PDF 查看器在 sandbox 文档中无法加载。
+    headers.set('x-content-type-options', 'nosniff');
+    if (policy !== 'pdf') headers.set('content-security-policy', 'sandbox');
     return new Response(upstream.body, { status: upstream.status, headers });
   } catch (e) {
     return handleCfError(e);

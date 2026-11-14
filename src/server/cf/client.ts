@@ -43,10 +43,17 @@ export class CfApiError extends Error {
 
 /**
  * SDK 把 objectKey 原样拼进 URL 路径不做编码——空格/特殊字符会产生非法 URL，
- * 斜杠又必须保留为路径分隔：逐段 encodeURIComponent（deleteR2Object / getR2ObjectContent 共用）。
+ * 斜杠又必须保留为路径分隔：逐段 encodeURIComponent（CfClient 各 R2 对象方法与 r2Presign 共用）。
+ * `.` / `..` 段无法安全表达：WHATWG URL 解析会把 `.`、`..` 及其 `%2e` 形式都当作点段折叠，
+ * 请求会落到别的路径（如 `a/../../cors` → 桶的 CORS 端点；预签名可逃出目标桶）。
+ * 这类 key 一律以 400 拒绝，宁可不操作也不打到错误目标。
  */
-function encodeR2ObjectKey(key: string): string {
-  return key.split('/').map(encodeURIComponent).join('/');
+export function encodeR2ObjectKey(key: string): string {
+  const segments = key.split('/');
+  if (segments.some((s) => s === '.' || s === '..')) {
+    throw new CfApiError(400, ['object keys with "." or ".." path segments are not supported']);
+  }
+  return segments.map(encodeURIComponent).join('/');
 }
 
 /** 对象超出服务端中转预览上限时的稳定标记错误（content 路由映射为 413 objectTooLarge） */
