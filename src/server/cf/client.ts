@@ -400,10 +400,14 @@ export class CfClient {
     });
   }
 
+  /**
+   * 编辑记录走 PATCH（records.edit）而非 PUT（records.update）：PUT 是整条覆盖，
+   * 表单不涉及的 comment / tags / settings（flatten_cname、ipv4_only 等）会被静默清空。
+   */
   updateDnsRecord(zoneId: string, recordId: string, data: CfDnsRecordInput): Promise<CfDnsRecord> {
     return this.wrap(async () => {
-      const params = { zone_id: zoneId, ...data } as Parameters<Cloudflare['dns']['records']['update']>[1];
-      return toDnsRecord(await this.sdk.dns.records.update(recordId, params));
+      const params = { zone_id: zoneId, ...data } as Parameters<Cloudflare['dns']['records']['edit']>[1];
+      return toDnsRecord(await this.sdk.dns.records.edit(recordId, params));
     });
   }
 

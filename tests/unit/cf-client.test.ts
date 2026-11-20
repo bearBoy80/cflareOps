@@ -97,6 +97,34 @@ describe('CfClient (official SDK adapter)', () => {
     expect(url).toContain('/zones/z1/dns_records/r1');
   });
 
+  it('updateDnsRecord PATCHes so fields the form does not send (comment/tags/settings) survive', async () => {
+    let method = '';
+    let url = '';
+    let body: Record<string, unknown> = {};
+    const fetchImpl: typeof fetch = async (input, init) => {
+      method = (init?.method ?? 'GET').toUpperCase();
+      url = String(input);
+      body = JSON.parse(String(init?.body ?? '{}'));
+      return jsonResponse({
+        success: true,
+        errors: [],
+        messages: [],
+        result: { id: 'r1', type: 'A', name: 'www.a.com', content: '1.2.3.4', ttl: 300, proxied: false },
+      });
+    };
+    await new CfClient('tok', fetchImpl).updateDnsRecord('z1', 'r1', {
+      type: 'A',
+      name: 'www',
+      content: '1.2.3.4',
+      ttl: 300,
+      proxied: false,
+    });
+    expect(method).toBe('PATCH');
+    expect(url).toContain('/zones/z1/dns_records/r1');
+    expect(body).not.toHaveProperty('comment');
+    expect(body).not.toHaveProperty('tags');
+  });
+
   it('raw() fallback calls arbitrary endpoint with auth header', async () => {
     let seenAuth = '';
     let seenUrl = '';

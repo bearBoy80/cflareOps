@@ -382,6 +382,7 @@ const zh = {
   'email.errTooManyRecipients': '收件人、抄送和密送合计最多 50 个地址',
   'email.errSendInProgress': '同一发送请求仍在处理中，请稍后查看记录，勿重复提交',
   'email.errSendAlreadyFailed': '该发送请求已经失败，请确认后重新发送',
+  'email.errRequestMismatch': '邮件内容已修改，与上次未确认的发送不一致；请先在发送记录中确认上次结果后再发送',
   'email.errFromDomainMismatch': '发件地址与所选域名不一致',
   'email.errRenderFailed': '正文渲染失败，请检查内容',
   'email.errScopeMissing': 'Token 缺少 Email Sending 权限，发送失败（其余功能不受影响）',
@@ -918,6 +919,8 @@ const en: Record<MessageKey, string> = {
   'email.errTooManyRecipients': 'To, Cc, and Bcc may contain at most 50 addresses combined',
   'email.errSendInProgress': 'The same send request is still in progress. Check the log before retrying.',
   'email.errSendAlreadyFailed': 'This send request already failed. Review it before sending again.',
+  'email.errRequestMismatch':
+    'The email changed since the last unconfirmed send. Check the send log for that result before sending again.',
   'email.errFromDomainMismatch': 'Sender address does not match the selected domain',
   'email.errRenderFailed': 'Failed to render the body content',
   'email.errScopeMissing': 'The token lacks the Email Sending permission — send failed (other features unaffected)',

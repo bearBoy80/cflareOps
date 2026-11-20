@@ -33,6 +33,7 @@ const ERROR_CODE_KEYS: Record<string, MessageKey> = {
   emailSendForbidden: 'email.errScopeMissing',
   sendInProgress: 'email.errSendInProgress',
   sendAlreadyFailed: 'email.errSendAlreadyFailed',
+  requestMismatch: 'email.errRequestMismatch',
   logNotFound: 'email.errLogNotFound',
   accountNotFound: 'accounts.errNotFound',
 };
@@ -109,7 +110,9 @@ function SendTab({ locale, domains }: { locale: Locale; domains: DomainItem[] })
   const [format, setFormat] = useState<EmailFormat>('markdown');
   const [content, setContent] = useState('');
   const [sending, setSending] = useState(false);
-  const requestId = useRef<string | null>(null);
+  // 网络失败后的重试复用同一 requestId（服务端据此去重）；但只限内容完全未改的重试——
+  // 改过收件人/正文等就是一封新邮件，必须换新 id，否则服务端会把上次结果当作这次的。
+  const pendingRequest = useRef<{ id: string; payload: string } | null>(null);
   const { showToast } = useToast();
   const apiErrorText = useApiErrorText(locale);
 
@@ -119,24 +122,28 @@ function SendTab({ locale, domains }: { locale: Locale; domains: DomainItem[] })
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!selected) return;
-    requestId.current ??= crypto.randomUUID();
+    const payload = {
+      domainId: effectiveDomainId,
+      from: `${fromLocal.trim()}@${selected.domain}`,
+      fromName: fromName.trim() || undefined,
+      to: splitEmails(to),
+      cc: splitEmails(cc),
+      bcc: splitEmails(bcc),
+      subject,
+      format,
+      content,
+    };
+    const payloadKey = JSON.stringify(payload);
+    if (pendingRequest.current?.payload !== payloadKey) {
+      pendingRequest.current = { id: crypto.randomUUID(), payload: payloadKey };
+    }
+    const requestId = pendingRequest.current.id;
     setSending(true);
     try {
       const res = await fetch('/api/email/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          domainId: effectiveDomainId,
-          from: `${fromLocal.trim()}@${selected.domain}`,
-          fromName: fromName.trim() || undefined,
-          to: splitEmails(to),
-          cc: splitEmails(cc),
-          bcc: splitEmails(bcc),
-          subject,
-          format,
-          content,
-          requestId: requestId.current,
-        }),
+        body: JSON.stringify({ ...payload, requestId }),
       });
       const data = (await res.json().catch(() => null)) as {
         error?: string;
@@ -145,7 +152,7 @@ function SendTab({ locale, domains }: { locale: Locale; domains: DomainItem[] })
         logged?: boolean;
       } | null;
       // 收到服务器响应代表本次结果确定；下次点击应是一次新的发送。
-      requestId.current = null;
+      pendingRequest.current = null;
       if (res.ok) {
         if (data?.status === 'failed') showToast(t(locale, 'email.sendBounced'), 'error');
         else if (data?.status === 'partial') showToast(t(locale, 'email.sendPartial'), 'error');
