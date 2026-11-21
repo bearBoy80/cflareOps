@@ -42,11 +42,13 @@ export interface ProviderSendOk {
 }
 
 export class EmailSendConflictError extends Error {
-  constructor(public code: 'sendInProgress' | 'sendAlreadyFailed') {
+  constructor(public code: 'sendInProgress' | 'sendAlreadyFailed' | 'requestMismatch') {
     super(
       code === 'sendInProgress'
         ? 'an email send with this request ID is still in progress'
-        : 'this request ID already failed',
+        : code === 'sendAlreadyFailed'
+          ? 'this request ID already failed'
+          : 'this request ID was already used for a different email',
     );
     this.name = 'EmailSendConflictError';
   }

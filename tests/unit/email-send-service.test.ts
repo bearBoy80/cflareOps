@@ -247,4 +247,39 @@ describe('sendEmail service', () => {
     expect(replayed).toMatchObject({ logId: first.logId, status: 'sent', messageId: 'once' });
     expect(resend).toHaveBeenCalledTimes(1);
   });
+
+  it.each([
+    ['recipient', { to: ['fixed@b.co'] }],
+    ['cc', { cc: ['c@b.co'] }],
+    ['subject', { subject: 'Hi again' }],
+    ['content', { content: '# hello, corrected' }],
+    ['format', { format: 'text' as const }],
+    ['from address', { from: 'billing@mail.example.com' }],
+  ])('refuses to replay a reused request id when the %s changed', async (_field, change) => {
+    const { db, key } = await setup();
+    const resend = vi.fn(async () => ({ messageId: 'once' }));
+    await sendEmail({ db, key, userEmail: ALICE }, 'dom-resend', msg(), { resend }, 'request-1');
+    await expect(
+      sendEmail({ db, key, userEmail: ALICE }, 'dom-resend', msg(change), { resend }, 'request-1'),
+    ).rejects.toMatchObject({ name: 'EmailSendConflictError', code: 'requestMismatch' });
+    expect(resend).toHaveBeenCalledTimes(1);
+    expect(await countLogs(db)).toBe(1);
+  });
+
+  it('refuses to replay a reused request id against a different sending domain', async () => {
+    const { db, key } = await setup();
+    const resend = vi.fn(async () => ({ messageId: 'once' }));
+    const makeCfClient = vi.fn();
+    await sendEmail({ db, key, userEmail: ALICE }, 'dom-resend', msg(), { resend }, 'request-1');
+    await expect(
+      sendEmail(
+        { db, key, userEmail: ALICE },
+        'dom-cf',
+        msg({ from: 'no-reply@cf.example.com' }),
+        { resend, makeCfClient },
+        'request-1',
+      ),
+    ).rejects.toMatchObject({ code: 'requestMismatch' });
+    expect(makeCfClient).not.toHaveBeenCalled();
+  });
 });

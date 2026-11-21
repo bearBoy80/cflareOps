@@ -116,16 +116,60 @@ export async function finishEmailLog(
     .run();
 }
 
+/** 幂等重放比对用的请求快照：同一 idempotency key 只能对应同一封邮件 */
+export interface EmailRequestSnapshot {
+  domainId: string | null;
+  fromAddress: string;
+  recipients: EmailRecipients;
+  subject: string;
+  format: string;
+  content: string;
+}
+
 export async function getEmailLogByIdempotencyKey(
   db: Db,
   ownerEmail: string,
   idempotencyKey: string,
-): Promise<{ id: string; status: string; messageId: string | null; error: string | null } | null> {
+): Promise<{
+  id: string;
+  status: string;
+  messageId: string | null;
+  error: string | null;
+  request: EmailRequestSnapshot;
+} | null> {
   const row = await db
-    .prepare('SELECT id, status, message_id, error FROM email_log WHERE owner_email = ? AND idempotency_key = ?')
+    .prepare(
+      `SELECT id, status, message_id, error, domain_id, from_address, recipients_json, subject, format, content
+       FROM email_log WHERE owner_email = ? AND idempotency_key = ?`,
+    )
     .bind(ownerEmail, idempotencyKey)
-    .first<{ id: string; status: string; message_id: string | null; error: string | null }>();
-  return row ? { id: row.id, status: row.status, messageId: row.message_id, error: row.error } : null;
+    .first<{
+      id: string;
+      status: string;
+      message_id: string | null;
+      error: string | null;
+      domain_id: string | null;
+      from_address: string;
+      recipients_json: string;
+      subject: string;
+      format: string;
+      content: string;
+    }>();
+  if (!row) return null;
+  return {
+    id: row.id,
+    status: row.status,
+    messageId: row.message_id,
+    error: row.error,
+    request: {
+      domainId: row.domain_id,
+      fromAddress: row.from_address,
+      recipients: parseRecipients(row.recipients_json),
+      subject: row.subject,
+      format: row.format,
+      content: row.content,
+    },
+  };
 }
 
 /** 列表不含 content：正文可能很大，回看单条时再取 */

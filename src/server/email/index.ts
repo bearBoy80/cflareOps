@@ -70,7 +70,7 @@ export async function sendEmail(
       domainId: row.id,
       provider: row.provider,
       fromAddress: msg.from,
-      recipients: { to: msg.to, cc: msg.cc ?? [], bcc: msg.bcc ?? [] },
+      recipients,
       subject: msg.subject,
       format: msg.format,
       content: msg.content,
@@ -80,10 +80,22 @@ export async function sendEmail(
       idempotencyKey,
     });
 
+  const recipients = { to: msg.to, cc: msg.cc ?? [], bcc: msg.bcc ?? [] };
   const replay = async (): Promise<SendResult | null> => {
     if (!idempotencyKey) return null;
     const existing = await getEmailLogByIdempotencyKey(ctx.db, ctx.userEmail, idempotencyKey);
     if (!existing) return null;
+    // 同一 key 只能重放「同一封」邮件：内容/收件人/发件地址任一不同就是新的发送意图，
+    // 若照旧重放会把改过的邮件谎报为已发送而实际从未发出。
+    const prev = existing.request;
+    const same =
+      prev.domainId === row.id &&
+      prev.fromAddress === msg.from &&
+      JSON.stringify(prev.recipients) === JSON.stringify(recipients) &&
+      prev.subject === msg.subject &&
+      prev.format === msg.format &&
+      prev.content === msg.content;
+    if (!same) throw new EmailSendConflictError('requestMismatch');
     if (existing.status === 'sent' || existing.status === 'partial') {
       return {
         logId: existing.id,
